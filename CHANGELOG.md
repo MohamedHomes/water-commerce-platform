@@ -167,3 +167,26 @@
   Java 11 while the configured Gradle requires Java 17 or later
 - Android release build and signing gate remain unverified until a compatible
   JDK and operator-managed signing configuration are available
+
+## Stabilization update - 2026-10-24
+
+- revalidated verified-purchase review ownership, rating validation, pending
+  moderation, approved publication, rejected-review invisibility, and duplicate
+  prevention through PGlite-backed end-to-end tests
+- added a generated fresh-database SQL snapshot from all 16 ordered migrations,
+  with matching schema migration ledger entries; a PGlite test executes the
+  snapshot and confirms the backend migration runner safely skips its recorded
+  migrations
+- configured the existing admin ESLint command with a TypeScript-aware flat
+  config and declared parser/plugin dependencies
+- verified backend build (exit 0), all 11 backend suites and 27 tests (exit 0),
+  admin production build (exit 0), admin lint (exit 0), Flutter analysis (exit
+  0), and all 6 Flutter tests (exit 0)
+- Android debug build remains blocked (exit 1): Android Studio's bundled Java
+  and the selected Java runtime are 11.0.10, while the wrapper is Gradle 9.3.1
+  and requires Java 17 or later; Android command-line tools and license
+  acceptance are also missing
+- PGlite validation does not verify the deployed PostgreSQL 16 configuration;
+  PostgreSQL 16 and Docker runtime checks remain deferred
+- the repository documents no sprint after Sprint 18 and provides no next-sprint
+  acceptance criteria; no unnumbered feature work or invented sprint was started

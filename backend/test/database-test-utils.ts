@@ -17,6 +17,10 @@ export class PGliteDatabaseAdapter {
         return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length };
     }
 
+    async exec(text: string) {
+        return this.instance.exec(text);
+    }
+
     withTransaction<T>(operation: (client: QueryExecutor) => Promise<T>) {
         return this.instance.transaction((transaction) => operation(this.executor(transaction)));
     }

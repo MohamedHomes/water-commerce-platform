@@ -99,6 +99,12 @@ was checked and pending migrations completed. PGlite integration tests exercise
 the PostgreSQL-compatible migration SQL and persistence behavior, but are not a
 substitute for running this check against PostgreSQL 16.
 
+A generated consolidated setup for a new, empty database is documented in
+[`infrastructure/database/README.md`](./infrastructure/database/README.md).
+It includes the ordered migration SQL and matching migration-ledger checksums;
+the backend migration runner remains the canonical mechanism for normal
+startup and deployment.
+
 ## Core integrity rules
 
 - all order states must be auditable

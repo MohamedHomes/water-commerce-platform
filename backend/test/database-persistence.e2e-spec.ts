@@ -1,6 +1,10 @@
 import { INestApplication } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import request from 'supertest';
+import { PGlite } from '@electric-sql/pglite';
 import { MigrationRunnerService } from '../src/database/migration-runner.service';
+import { loadMigrations, runMigrations } from '../src/database/migration-runner';
 import { createTestApplication, PGliteDatabaseAdapter } from './database-test-utils';
 
 describe('PostgreSQL persistence integration (PGlite)', () => {
@@ -77,6 +81,44 @@ describe('PostgreSQL persistence integration (PGlite)', () => {
         }
         if (database) {
             await database.close();
+        }
+    });
+
+    it('executes the consolidated setup and stays aligned with the migration runner', async () => {
+        const setupDatabase = new PGlite();
+        try {
+            const setupSql = readFileSync(
+                resolve(__dirname, '..', '..', 'infrastructure', 'database', 'full_database_setup.sql'),
+                'utf8',
+            );
+            await setupDatabase.exec(setupSql);
+
+            const migrations = loadMigrations(resolve(__dirname, '..', 'migrations'));
+            const ledger = await setupDatabase.query<{
+                version: string;
+                filename: string;
+                checksum: string;
+            }>(
+                'SELECT version, filename, checksum FROM schema_migrations ORDER BY version',
+            );
+            expect(ledger.rows).toEqual(migrations.map(({ version, filename, checksum }) => ({
+                version,
+                filename,
+                checksum,
+            })));
+
+            const adapter = new PGliteDatabaseAdapter(setupDatabase);
+            const rerun = await runMigrations(adapter, resolve(__dirname, '..', 'migrations'));
+            expect(rerun).toEqual({
+                applied: [],
+                skipped: migrations.map(({ filename }) => filename),
+            });
+            const products = await setupDatabase.query<{ count: string }>(
+                'SELECT COUNT(*)::text AS count FROM products',
+            );
+            expect(Number(products.rows[0].count)).toBeGreaterThan(0);
+        } finally {
+            await setupDatabase.close();
         }
     });
 

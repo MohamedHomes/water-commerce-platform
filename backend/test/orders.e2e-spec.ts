@@ -411,6 +411,18 @@ describe('Orders', () => {
         expect(updated.body.events.map((event: { status: string }) => event.status))
             .toEqual(['pending_dispatch', 'assigned', 'picked_up', 'delivered']);
 
+        const anotherCustomer = await registerCustomer('review-other-customer@example.com');
+        await request(app.getHttpServer())
+            .post('/api/v1/catalog/products/prod-1/reviews')
+            .set('Authorization', `Bearer ${anotherCustomer.token}`)
+            .send({ orderId: order.body.id, rating: 5, comment: 'Not my order' })
+            .expect(400);
+        await request(app.getHttpServer())
+            .post('/api/v1/catalog/products/prod-1/reviews')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({ orderId: order.body.id, rating: 6, comment: 'Invalid rating' })
+            .expect(400);
+
         const submitted = await request(app.getHttpServer())
             .post('/api/v1/catalog/products/prod-1/reviews')
             .set('Authorization', `Bearer ${customer.token}`)
@@ -438,6 +450,39 @@ describe('Orders', () => {
             .set('Authorization', `Bearer ${adminToken}`)
             .send({ status: 'approved' })
             .expect(200);
+
+        const secondPrepared = await prepareCheckout(customer.token, 'cash', 1);
+        const secondOrder = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({ checkoutId: secondPrepared.checkoutId })
+            .expect(201);
+        const secondDelivery = await request(app.getHttpServer())
+            .get(`/api/v1/deliveries/orders/${secondOrder.body.id}`)
+            .set('Authorization', `Bearer ${customer.token}`)
+            .expect(200);
+        for (const status of ['assigned', 'picked_up', 'delivered']) {
+            await request(app.getHttpServer())
+                .patch(`/api/v1/admin/deliveries/${secondDelivery.body.id}/status`)
+                .set('Authorization', `Bearer ${adminToken}`)
+                .send({ status, note: `Operations marked ${status}` })
+                .expect(200);
+        }
+        const rejectedReview = await request(app.getHttpServer())
+            .post('/api/v1/catalog/products/prod-1/reviews')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({ orderId: secondOrder.body.id, rating: 2, comment: 'Rejected review' })
+            .expect(201);
+        await request(app.getHttpServer())
+            .patch(`/api/v1/admin/reviews/${rejectedReview.body.id}/status`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: 'rejected' })
+            .expect(200);
+        const hiddenRejected = await request(app.getHttpServer())
+            .get('/api/v1/catalog/products/prod-1/reviews')
+            .expect(200);
+        expect(hiddenRejected.body.summary).toEqual({ count: 1, averageRating: 5 });
+        expect(hiddenRejected.body.items).toHaveLength(1);
 
         const published = await request(app.getHttpServer())
             .get('/api/v1/catalog/products/prod-1/reviews')
