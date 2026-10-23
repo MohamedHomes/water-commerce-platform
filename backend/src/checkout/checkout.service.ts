@@ -3,8 +3,8 @@ import {
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 import { QueryResultRow } from 'pg';
 import { AddressService } from '../address/address.service';
@@ -20,6 +20,13 @@ export class PrepareCheckoutDto {
     @IsString()
     deliveryZoneId?: string;
 
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+    @IsString()
+    @MaxLength(64)
+    @Matches(/^[A-Z0-9_-]+$/)
+    promotionCode?: string;
+
     @Type(() => String)
     @IsString()
     @IsIn(['standard', 'express'])
@@ -33,6 +40,8 @@ export class PrepareCheckoutDto {
 
 export interface CheckoutSummary {
     subtotal: number;
+    discount: number;
+    promotionCode?: string;
     deliveryFee: number;
     serviceFee: number;
     total: number;
@@ -59,6 +68,9 @@ interface CheckoutRow extends QueryResultRow {
     delivery_zone_id: string | null;
     cart_snapshot: CartResponse;
     subtotal: string | number;
+    discount_amount: string | number;
+    promotion_id: string | null;
+    promotion_code: string | null;
     delivery_fee: string | number;
     service_fee: string | number;
     total: string | number;
@@ -83,7 +95,8 @@ export class CheckoutService {
         const result = await this.database.query<CheckoutRow>(
             `
                 SELECT id, customer_id, address_id, delivery_zone_id, cart_snapshot,
-                    subtotal, delivery_fee, service_fee, total, currency, payment_method,
+                    subtotal, discount_amount, promotion_id, promotion_code,
+                    delivery_fee, service_fee, total, currency, payment_method,
                     delivery_option, status, expires_at
                 FROM checkout_sessions
                 WHERE id = $1 AND customer_id = $2
@@ -122,13 +135,68 @@ export class CheckoutService {
             const deliveryZone = await this.addressService.resolveDeliveryZone(address.city, dto.deliveryZoneId, client);
 
             const subtotal = cart.summary.total;
+            let promotionId: string | null = null;
+            let promotionCode: string | undefined;
+            let discount = 0;
+            if (dto.promotionCode) {
+                const promotionResult = await client.query<{
+                    id: string;
+                    code: string;
+                    discount_type: 'percentage' | 'fixed';
+                    discount_value: string | number;
+                    max_discount: string | number | null;
+                    minimum_subtotal: string | number;
+                    max_redemptions: number | null;
+                    max_per_customer: number;
+                }>(
+                    `
+                        SELECT id, code, discount_type, discount_value, max_discount,
+                            minimum_subtotal, max_redemptions, max_per_customer
+                        FROM promotions
+                        WHERE UPPER(code) = $1 AND is_active = TRUE
+                            AND starts_at <= NOW() AND (ends_at IS NULL OR ends_at > NOW())
+                        FOR SHARE
+                    `,
+                    [dto.promotionCode],
+                );
+                const promotion = promotionResult.rows[0];
+                if (!promotion || subtotal < Number(promotion.minimum_subtotal)) {
+                    throw new BadRequestException('Promotion code is invalid or unavailable');
+                }
+                const [redemptionCount, customerRedemptionCount] = await Promise.all([
+                    client.query<{ count: string }>(
+                        'SELECT COUNT(*)::text AS count FROM promotion_redemptions WHERE promotion_id = $1',
+                        [promotion.id],
+                    ),
+                    client.query<{ count: string }>(
+                        'SELECT COUNT(*)::text AS count FROM promotion_redemptions WHERE promotion_id = $1 AND customer_id = $2',
+                        [promotion.id, userId],
+                    ),
+                ]);
+                if ((promotion.max_redemptions !== null
+                        && Number(redemptionCount.rows[0].count) >= promotion.max_redemptions)
+                    || Number(customerRedemptionCount.rows[0].count) >= promotion.max_per_customer) {
+                    throw new BadRequestException('Promotion code is invalid or unavailable');
+                }
+                const rawDiscount = promotion.discount_type === 'percentage'
+                    ? subtotal * Number(promotion.discount_value) / 100
+                    : Number(promotion.discount_value);
+                discount = Number(Math.min(
+                    subtotal,
+                    promotion.max_discount === null ? rawDiscount : Math.min(rawDiscount, Number(promotion.max_discount)),
+                ).toFixed(2));
+                promotionId = promotion.id;
+                promotionCode = promotion.code;
+            }
             const deliveryFee = deliveryZone.baseFee
                 + (dto.deliveryOption === 'express' ? deliveryZone.expressFee ?? 0 : 0);
-            const serviceFee = Number((subtotal * this.serviceFeeRate).toFixed(2));
-            const total = Number((subtotal + deliveryFee + serviceFee).toFixed(2));
+            const serviceFee = Number(((subtotal - discount) * this.serviceFeeRate).toFixed(2));
+            const total = Number((subtotal - discount + deliveryFee + serviceFee).toFixed(2));
             const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
             const summary: CheckoutSummary = {
                 subtotal: Number(subtotal.toFixed(2)),
+                discount,
+                promotionCode,
                 deliveryFee: Number(deliveryFee.toFixed(2)),
                 serviceFee,
                 total,
@@ -139,16 +207,19 @@ export class CheckoutService {
                 `
                     INSERT INTO checkout_sessions (
                         id, customer_id, address_id, delivery_zone_id, cart_snapshot,
-                        subtotal, delivery_fee, service_fee, total, currency, payment_method,
-                        delivery_option, status, expires_at
-                    ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, 'draft', $13)
-                    RETURNING id, customer_id, address_id, delivery_zone_id, cart_snapshot,
-                        subtotal, delivery_fee, service_fee, total, currency, payment_method,
-                        delivery_option, status, expires_at
+                            subtotal, promotion_id, promotion_code, discount_amount,
+                            delivery_fee, service_fee, total, currency, payment_method,
+                            delivery_option, status, expires_at
+                        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'draft', $16)
+                        RETURNING id, customer_id, address_id, delivery_zone_id, cart_snapshot,
+                            subtotal, promotion_id, promotion_code, discount_amount,
+                            delivery_fee, service_fee, total, currency, payment_method,
+                            delivery_option, status, expires_at
                 `,
                 [
                     checkoutId, userId, address.id, deliveryZone.id, JSON.stringify(cart),
-                    summary.subtotal, summary.deliveryFee, summary.serviceFee, summary.total,
+                    summary.subtotal, promotionId, promotionCode ?? null, summary.discount,
+                    summary.deliveryFee, summary.serviceFee, summary.total,
                     summary.currency, dto.paymentMethod, dto.deliveryOption, expiresAt,
                 ],
             );
@@ -178,6 +249,8 @@ export class CheckoutService {
             cart: row.cart_snapshot,
             summary: {
                 subtotal: Number(row.subtotal),
+                discount: Number(row.discount_amount),
+                promotionCode: row.promotion_code ?? undefined,
                 deliveryFee: Number(row.delivery_fee),
                 serviceFee: Number(row.service_fee),
                 total: Number(row.total),

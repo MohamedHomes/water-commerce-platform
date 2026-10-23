@@ -74,6 +74,23 @@ quantity as a single stock pool. Orders lock affected product rows before
 rechecking availability, decrementing stock, and inserting reservations in the
 same transaction. Eligible cancellations restore only still-reserved
 quantities; reservations on paid orders remain held for fulfillment.
+Migration `011` adds customer-owned delivery records and append-only status
+events. Delivery records are opened only for cash orders or successfully paid
+card orders; external dispatch and driver tracking remain unavailable.
+Migration `012` adds a customer-scoped notification inbox with unique event
+deduplication keys and read timestamps.
+Migration `013` adds promotion definitions/redemptions and persists promotion
+snapshots and discounts on checkout sessions and orders. Redemption limits are
+rechecked under a promotion row lock and the redemption is written in the order
+transaction.
+Migration `014` adds customer/admin roles and a privileged-action audit log.
+Customer registration defaults to the customer role; admin elevation is an
+operator-controlled database action. No default customer-facing coupon is
+seeded.
+Migration `015` extends the inventory movement ledger for audited admin
+adjustments while retaining order-linked reserve/release movements.
+Migration `016` adds verified-purchase product reviews with pending moderation,
+approved-public visibility, and moderator attribution.
 
 For local PostgreSQL 16 verification, start the repository's database service
 with `docker compose up -d postgres`, configure `DATABASE_URL` for that
@@ -91,4 +108,16 @@ substitute for running this check against PostgreSQL 16.
 - product stock cannot become negative
 - inventory reservations must prevent overselling and cancellation must release
   reserved quantities exactly once
+- delivery state history is append-only and customer visibility is scoped to
+  the owning order
+- notification event creation is idempotent per customer and event key
+- promotion values and discounts are server-calculated; redemption records are
+  tied to a customer and immutable order
+- admin privilege changes are not self-service and privileged promotion edits
+  are audited
+- manual stock adjustments lock the product row, preserve non-negative stock,
+  and persist a movement record and administrator audit entry atomically
+- admin catalog price and active-state updates are audited
+- public review queries include approved reviews only; a submission requires
+  a delivered order containing the reviewed product
 - pricing must be recalculated server-side before order creation

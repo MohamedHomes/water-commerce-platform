@@ -78,6 +78,8 @@ class CheckoutSummary {
   const CheckoutSummary({
     required this.checkoutId,
     required this.subtotal,
+    required this.discount,
+    required this.promotionCode,
     required this.deliveryFee,
     required this.serviceFee,
     required this.total,
@@ -86,6 +88,8 @@ class CheckoutSummary {
 
   final String checkoutId;
   final double subtotal;
+  final double discount;
+  final String? promotionCode;
   final double deliveryFee;
   final double serviceFee;
   final double total;
@@ -96,6 +100,8 @@ class CheckoutSummary {
     return CheckoutSummary(
       checkoutId: json['checkoutId']?.toString() ?? '',
       subtotal: (summary['subtotal'] ?? 0).toDouble(),
+      discount: (summary['discount'] ?? 0).toDouble(),
+      promotionCode: summary['promotionCode']?.toString(),
       deliveryFee: (summary['deliveryFee'] ?? 0).toDouble(),
       serviceFee: (summary['serviceFee'] ?? 0).toDouble(),
       total: (summary['total'] ?? 0).toDouble(),
@@ -136,6 +142,7 @@ class OrderRecord {
     required this.status,
     required this.paymentMethod,
     this.paymentStatus,
+    this.deliveryStatus,
     required this.deliveryOption,
     required this.address,
     required this.items,
@@ -148,6 +155,7 @@ class OrderRecord {
   final String status;
   final String paymentMethod;
   final String? paymentStatus;
+  final String? deliveryStatus;
   final String deliveryOption;
   final Address address;
   final List<OrderLine> items;
@@ -164,6 +172,7 @@ class OrderRecord {
       status: json['status']?.toString() ?? 'unknown',
       paymentMethod: json['paymentMethod']?.toString() ?? '',
       paymentStatus: json['paymentStatus']?.toString(),
+      deliveryStatus: json['deliveryStatus']?.toString(),
       deliveryOption: json['deliveryOption']?.toString() ?? '',
       address: Address.fromJson(addressJson),
       items: rawItems
@@ -202,6 +211,67 @@ class PaymentIntent {
       amount: (json['amount'] as num?)?.toDouble() ?? 0,
       currency: json['currency']?.toString() ?? 'SAR',
       checkoutUrl: json['checkoutUrl']?.toString(),
+    );
+  }
+}
+
+class DeliveryTracking {
+  const DeliveryTracking({
+    required this.status,
+    required this.estimatedMinutes,
+    required this.trackingCode,
+    required this.trackingAvailable,
+    required this.events,
+  });
+
+  final String status;
+  final int estimatedMinutes;
+  final String trackingCode;
+  final bool trackingAvailable;
+  final List<String> events;
+
+  factory DeliveryTracking.fromJson(Map<String, dynamic> json) {
+    final rawEvents = json['events'] as List? ?? [];
+    return DeliveryTracking(
+      status: json['status']?.toString() ?? 'unknown',
+      estimatedMinutes: (json['estimatedMinutes'] as num?)?.toInt() ?? 0,
+      trackingCode: json['trackingCode']?.toString() ?? '',
+      trackingAvailable: json['trackingAvailable'] == true,
+      events: rawEvents
+          .map((event) => (event as Map<String, dynamic>)['note'].toString())
+          .toList(),
+    );
+  }
+}
+
+class CustomerNotification {
+  const CustomerNotification({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.body,
+    required this.readAt,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String type;
+  final String title;
+  final String body;
+  final String? readAt;
+  final DateTime createdAt;
+
+  bool get isRead => readAt != null;
+
+  factory CustomerNotification.fromJson(Map<String, dynamic> json) {
+    return CustomerNotification(
+      id: json['id']?.toString() ?? '',
+      type: json['type']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      readAt: json['readAt']?.toString(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }
@@ -316,6 +386,7 @@ class ApiClient {
     required String deliveryZoneId,
     required String deliveryOption,
     required String paymentMethod,
+    String? promotionCode,
   }) async {
     final token = await readToken();
     final response = await dio.post(
@@ -325,6 +396,8 @@ class ApiClient {
         'deliveryZoneId': deliveryZoneId,
         'deliveryOption': deliveryOption,
         'paymentMethod': paymentMethod,
+        if (promotionCode != null && promotionCode.trim().isNotEmpty)
+          'promotionCode': promotionCode.trim(),
       },
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
@@ -381,6 +454,50 @@ class ApiClient {
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
     return PaymentIntent.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  static Future<DeliveryTracking> fetchDelivery(String orderId) async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/deliveries/orders/$orderId',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return DeliveryTracking.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  static Future<void> submitProductReview({
+    required String productId,
+    required String orderId,
+    required int rating,
+    required String comment,
+  }) async {
+    final token = await readToken();
+    await dio.post(
+      '/catalog/products/$productId/reviews',
+      data: {'orderId': orderId, 'rating': rating, 'comment': comment},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+  }
+
+  static Future<List<CustomerNotification>> fetchNotifications({int limit = 50}) async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/notifications',
+      queryParameters: {'limit': limit},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    final items = response.data['items'] as List? ?? [];
+    return items
+        .map((item) => CustomerNotification.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<void> markNotificationRead(String id) async {
+    final token = await readToken();
+    await dio.patch(
+      '/notifications/$id/read',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
   }
 }
 
@@ -517,6 +634,10 @@ final appRouter = GoRouter(
       path: '/orders',
       builder: (_, __) => const OrdersScreen(),
     ),
+    GoRoute(
+      path: '/notifications',
+      builder: (_, __) => const NotificationsScreen(),
+    ),
   ],
 );
 
@@ -610,6 +731,13 @@ class HomeScreen extends StatelessWidget {
               title: 'Orders',
               subtitle: 'View, cancel, or reorder your purchases',
               onPressed: () => context.go('/orders'),
+            ),
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.notifications_outlined,
+              title: 'Notifications',
+              subtitle: 'Order and payment updates',
+              onPressed: () => context.go('/notifications'),
             ),
           ],
         ),
@@ -1033,6 +1161,7 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String deliveryOption = 'standard';
   String paymentMethod = 'card';
+  String promotionCode = '';
   bool loading = true;
   CheckoutSummary? summary;
   List<DeliveryZone> zones = [];
@@ -1101,6 +1230,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         deliveryZoneId: selectedZoneId!,
         deliveryOption: deliveryOption,
         paymentMethod: paymentMethod,
+        promotionCode: promotionCode,
       );
       if (mounted) setState(() { summary = response; loading = false; });
     } catch (exception) {
@@ -1197,6 +1327,18 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             selected: {paymentMethod},
             onSelectionChanged: (value) => setState(() { paymentMethod = value.first; summary = null; }),
           ),
+          const SizedBox(height: 16),
+          TextFormField(
+            initialValue: promotionCode,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Promotion code (optional)',
+            ),
+            onChanged: (value) {
+              promotionCode = value;
+              if (summary != null) setState(() => summary = null);
+            },
+          ),
           if (error != null) ...[
             const SizedBox(height: 16),
             Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -1216,6 +1358,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 child: Column(
                   children: [
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Subtotal'), Text('${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')]),
+                    if (summary!.discount > 0) ...[
+                      const SizedBox(height: 8),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Promotion${summary!.promotionCode == null ? '' : ' (${summary!.promotionCode})'}'), Text('-${summary!.currency} ${summary!.discount.toStringAsFixed(2)}')]),
+                    ],
                     const SizedBox(height: 8),
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Delivery'), Text('${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')]),
                     const SizedBox(height: 8),
@@ -1325,6 +1471,124 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Future<void> _showDelivery(OrderRecord order) async {
+    try {
+      final delivery = await ApiClient.fetchDelivery(order.id);
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Delivery ${delivery.status.replaceAll('_', ' ')}',
+                    style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                Text('Tracking code: ${delivery.trackingCode}'),
+                Text('Estimated time: ${delivery.estimatedMinutes} minutes'),
+                const SizedBox(height: 12),
+                if (!delivery.trackingAvailable)
+                  const Text('Live driver tracking is not available yet.'),
+                ...delivery.events.map((event) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.local_shipping_outlined),
+                      title: Text(event),
+                    )),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delivery information is unavailable: $exception')),
+        );
+      }
+    }
+  }
+
+  Future<void> _reviewOrder(OrderRecord order) async {
+    if (order.items.isEmpty) return;
+    final commentController = TextEditingController();
+    var productId = order.items.first.productId;
+    var rating = 5;
+    try {
+      final review = await showDialog<Map<String, Object>>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Review a delivered product'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: productId,
+                  items: order.items.map((item) => DropdownMenuItem(
+                    value: item.productId,
+                    child: Text(item.name, overflow: TextOverflow.ellipsis),
+                  )).toList(),
+                  onChanged: (value) => setDialogState(() => productId = value ?? productId),
+                ),
+                Text('Rating: $rating / 5'),
+                Slider(
+                  value: rating.toDouble(),
+                  min: 1,
+                  max: 5,
+                  divisions: 4,
+                  label: '$rating',
+                  onChanged: (value) => setDialogState(() => rating = value.round()),
+                ),
+                TextField(
+                  controller: commentController,
+                  maxLength: 1000,
+                  decoration: const InputDecoration(labelText: 'Comment (optional)'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, {
+                  'productId': productId,
+                  'rating': rating,
+                  'comment': commentController.text,
+                }),
+                child: const Text('Submit'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (review == null) return;
+      await ApiClient.submitProductReview(
+        productId: review['productId']! as String,
+        orderId: order.id,
+        rating: review['rating']! as int,
+        comment: review['comment']! as String,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Review submitted for moderation.')),
+        );
+      }
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Review could not be submitted: $exception')),
+        );
+      }
+    } finally {
+      commentController.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1392,6 +1656,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                         icon: const Icon(Icons.replay),
                                         label: const Text('Reorder'),
                                       ),
+                                      OutlinedButton.icon(
+                                        onPressed: () => _showDelivery(order),
+                                        icon: const Icon(Icons.local_shipping_outlined),
+                                        label: const Text('Delivery'),
+                                      ),
+                                      if (order.deliveryStatus == 'delivered')
+                                        OutlinedButton.icon(
+                                          onPressed: () => _reviewOrder(order),
+                                          icon: const Icon(Icons.star_outline),
+                                          label: const Text('Review product'),
+                                        ),
                                       if (canCancel && order.paymentStatus != 'pending')
                                         TextButton.icon(
                                           onPressed: () => _cancelOrder(order),
@@ -1417,6 +1692,94 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 ],
                               ),
                             ),
+                          );
+                        },
+                      ),
+                    ),
+    );
+  }
+}
+
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  List<CustomerNotification> items = [];
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final result = await ApiClient.fetchNotifications();
+      if (mounted) setState(() { items = result; loading = false; });
+    } catch (exception) {
+      if (mounted) setState(() { error = exception.toString(); loading = false; });
+    }
+  }
+
+  Future<void> _markRead(CustomerNotification notification) async {
+    try {
+      await ApiClient.markNotificationRead(notification.id);
+      await _load();
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update notification: $exception')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Notifications')),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(error!),
+                      const SizedBox(height: 12),
+                      FilledButton(onPressed: _load, child: const Text('Retry')),
+                    ],
+                  ),
+                )
+              : items.isEmpty
+                  ? const Center(child: Text('No notifications yet.'))
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return ListTile(
+                            leading: Icon(item.isRead
+                                ? Icons.notifications_none
+                                : Icons.notifications_active_outlined),
+                            title: Text(item.title),
+                            subtitle: Text(item.body),
+                            trailing: item.isRead
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Mark as read',
+                                    onPressed: () => _markRead(item),
+                                    icon: const Icon(Icons.done),
+                                  ),
                           );
                         },
                       ),

@@ -179,6 +179,11 @@ describe('Payments', () => {
             .set('Authorization', `Bearer ${customer.token}`)
             .expect(200);
         expect(order.body.status).toBe('paid');
+        const delivery = await request(app.getHttpServer())
+            .get(`/api/v1/deliveries/orders/${customer.order.id}`)
+            .set('Authorization', `Bearer ${customer.token}`)
+            .expect(200);
+        expect(delivery.body.status).toBe('pending_dispatch');
         await request(app.getHttpServer())
             .post(`/api/v1/orders/${customer.order.id}/cancel`)
             .set('Authorization', `Bearer ${customer.token}`)

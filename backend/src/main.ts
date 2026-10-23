@@ -14,8 +14,21 @@ async function bootstrap() {
         }),
     );
 
+    const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+    if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+        throw new Error('CORS_ORIGINS must be configured in production');
+    }
     app.enableCors({
-        origin: true,
+        origin: (origin, callback) => {
+            if (!origin || process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
+                callback(null, true);
+                return;
+            }
+            callback(new Error('CORS origin is not allowed'), false);
+        },
         credentials: true,
     });
 

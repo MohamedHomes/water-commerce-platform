@@ -17,9 +17,14 @@ import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
-import { JWT_EXPIRES_IN, JWT_SECRET, REFRESH_TOKEN_TTL } from './auth.constants';
+import {
+    JWT_EXPIRES_IN,
+    JWT_SECRET,
+    JWT_REFRESH_SECRET,
+    REFRESH_TOKEN_TTL,
+} from './auth.constants';
 
-export type CustomerRole = 'customer';
+export type CustomerRole = 'customer' | 'admin';
 
 export interface CustomerRecord {
     id: string;
@@ -28,6 +33,7 @@ export interface CustomerRecord {
     firstName: string;
     lastName: string;
     phone: string;
+    role: CustomerRole;
     createdAt: string;
     updatedAt: string;
 }
@@ -39,6 +45,7 @@ interface CustomerRow extends QueryResultRow {
     first_name: string;
     last_name: string;
     phone: string | null;
+    role: CustomerRole;
     created_at: Date | string;
     updated_at: Date | string;
 }
@@ -126,7 +133,7 @@ export class AuthService {
                     INSERT INTO customers (
                         id, email, password_hash, first_name, last_name, phone, created_at, updated_at
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-                    RETURNING id, email, password_hash, first_name, last_name, phone, created_at, updated_at
+                    RETURNING id, email, password_hash, first_name, last_name, phone, role, created_at, updated_at
                 `,
                 [id, email, passwordHash, dto.firstName.trim(), dto.lastName.trim(), dto.phone?.trim() ?? '', now],
             );
@@ -149,7 +156,7 @@ export class AuthService {
         const email = dto.email?.trim().toLowerCase();
         const result = await this.database.query<CustomerRow>(
             `
-                SELECT id, email, password_hash, first_name, last_name, phone, created_at, updated_at
+                SELECT id, email, password_hash, first_name, last_name, phone, role, created_at, updated_at
                 FROM customers WHERE email = $1
             `,
             [email],
@@ -170,7 +177,7 @@ export class AuthService {
     async refresh(refreshToken: string) {
         let payload: { sub: string; type?: string; role?: string };
         try {
-            payload = jwt.verify(refreshToken, JWT_SECRET) as typeof payload;
+            payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET) as typeof payload;
         } catch {
             throw new UnauthorizedException('Invalid or expired refresh token');
         }
@@ -180,7 +187,7 @@ export class AuthService {
 
         const result = await this.database.query<CustomerRow>(
             `
-                SELECT id, email, password_hash, first_name, last_name, phone, created_at, updated_at
+                SELECT id, email, password_hash, first_name, last_name, phone, role, created_at, updated_at
                 FROM customers WHERE id = $1
             `,
             [payload.sub],
@@ -206,7 +213,7 @@ export class AuthService {
     async getProfile(userId: string) {
         const result = await this.database.query<CustomerRow>(
             `
-                SELECT id, email, password_hash, first_name, last_name, phone, created_at, updated_at
+                SELECT id, email, password_hash, first_name, last_name, phone, role, created_at, updated_at
                 FROM customers WHERE id = $1
             `,
             [userId],
@@ -226,7 +233,7 @@ export class AuthService {
                     phone = COALESCE($4, phone),
                     updated_at = NOW()
                 WHERE id = $1
-                RETURNING id, email, password_hash, first_name, last_name, phone, created_at, updated_at
+                RETURNING id, email, password_hash, first_name, last_name, phone, role, created_at, updated_at
             `,
             [
                 userId,
@@ -249,6 +256,7 @@ export class AuthService {
             firstName: row.first_name,
             lastName: row.last_name,
             phone: row.phone ?? '',
+            role: row.role,
             createdAt: new Date(row.created_at).toISOString(),
             updatedAt: new Date(row.updated_at).toISOString(),
         };
@@ -265,7 +273,7 @@ export class AuthService {
             {
                 sub: customer.id,
                 email: customer.email,
-                role: 'customer' as CustomerRole,
+                role: customer.role,
             },
             JWT_SECRET,
             { expiresIn: JWT_EXPIRES_IN },
@@ -277,9 +285,9 @@ export class AuthService {
             {
                 sub: customer.id,
                 type: 'refresh',
-                role: 'customer' as CustomerRole,
+                role: customer.role,
             },
-            JWT_SECRET,
+            JWT_REFRESH_SECRET,
             { expiresIn: REFRESH_TOKEN_TTL },
         );
     }
@@ -291,6 +299,7 @@ export class AuthService {
             firstName: customer.firstName,
             lastName: customer.lastName,
             phone: customer.phone,
+            role: customer.role,
             createdAt: customer.createdAt,
             updatedAt: customer.updatedAt,
         };

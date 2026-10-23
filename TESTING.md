@@ -41,6 +41,21 @@ the backend and confirm its readiness endpoint reports `database: connected`.
   signatures and replay handling, amount/currency matching, and payment state
   transition tests
 - atomic inventory reserve/release accounting and concurrent oversell prevention
+- delivery creation after cash order placement/payment confirmation, cancellation
+  status, status-event persistence, and customer ownership
+- customer notification generation, idempotent read updates, and cross-customer
+  access isolation
+- server-calculated promotion discounts, persistent checkout/order snapshots,
+  and redemption-limit enforcement
+- admin role isolation, promotion management/audit records, and real dashboard
+  query results
+- stock adjustment validation, non-negative inventory enforcement, and
+  inventory movement/audit persistence
+- admin delivery transition validation, customer-visible event history, and
+  delivered timestamp persistence
+- delivered-purchase review eligibility, moderation visibility, duplicate
+  prevention, and aggregate rating calculations
+- admin catalog listing, price/availability updates, and role isolation
 - authorization tests
 - Flutter widget and model tests
 

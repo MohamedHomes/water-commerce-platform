@@ -54,7 +54,20 @@ docker compose -f infrastructure/docker-compose.yml up -d
 ## Implementation status
 
 The backend includes authentication, catalog/search, carts, address
-management, checkout drafts, and customer order history/actions. PostgreSQL 16
-deployment verification, payment processing, and inventory reservation are
-still pending; card orders remain `payment_pending` until a payment integration
-is implemented.
+management, checkout drafts, customer orders, payment lifecycle groundwork,
+inventory reservations, delivery status history, and an in-app notification
+inbox, plus database-backed admin dashboard and promotion management APIs.
+Payment processing has no configured real provider, and delivery has no
+dispatch or live-tracking integration. PostgreSQL 16 deployment verification
+remains pending.
+
+Configure `admin/.env` with `VITE_API_URL` (see `admin/.env.example`) to point
+the portal at the API. Administrator accounts must first be registered as
+customers and then explicitly elevated by a trusted database operator; public
+registration cannot assign the admin role. Sign in through the portal with
+that account.
+
+PGlite-backed integration tests currently execute the ordered migrations and
+exercise persistence behavior. They do not replace verification against the
+deployed PostgreSQL 16 configuration; see [DEPLOYMENT.md](./DEPLOYMENT.md)
+before production release.

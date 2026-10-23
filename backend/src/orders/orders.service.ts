@@ -16,6 +16,8 @@ import { QueryResultRow } from 'pg';
 import { AddressRecord, AddressService, DeliveryZoneRecord } from '../address/address.service';
 import { CartItemSnapshot, CartResponse, CartService } from '../cart/cart.service';
 import { DatabaseService, QueryExecutor } from '../database/database.service';
+import { DeliveryService } from '../delivery/delivery.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export class PlaceOrderDto {
     @IsUUID()
@@ -41,6 +43,8 @@ export type OrderStatus = 'payment_pending' | 'placed' | 'paid' | 'cancelled';
 
 export interface OrderSummary {
     subtotal: number;
+    discount: number;
+    promotionCode?: string;
     deliveryFee: number;
     serviceFee: number;
     total: number;
@@ -53,6 +57,7 @@ export interface OrderRecord {
     checkoutId: string;
     status: OrderStatus;
     paymentStatus?: string;
+    deliveryStatus?: string;
     paymentMethod: 'card' | 'cash';
     deliveryOption: 'standard' | 'express';
     address: AddressRecord;
@@ -71,6 +76,9 @@ interface CheckoutRow extends QueryResultRow {
     delivery_zone_id: string | null;
     cart_snapshot: CartResponse;
     subtotal: string | number;
+    promotion_id: string | null;
+    promotion_code: string | null;
+    discount_amount: string | number;
     delivery_fee: string | number;
     service_fee: string | number;
     total: string | number;
@@ -92,7 +100,11 @@ interface OrderRow extends QueryResultRow {
     delivery_zone_snapshot: DeliveryZoneRecord;
     cart_snapshot: CartResponse;
     payment_status?: string | null;
+    delivery_status?: string | null;
     subtotal: string | number;
+    promotion_id: string | null;
+    promotion_code: string | null;
+    discount_amount: string | number;
     delivery_fee: string | number;
     service_fee: string | number;
     total: string | number;
@@ -118,6 +130,8 @@ export class OrdersService {
         private readonly database: DatabaseService,
         private readonly cartService: CartService,
         private readonly addressService: AddressService,
+        private readonly deliveryService: DeliveryService,
+        private readonly notificationsService: NotificationsService,
     ) { }
 
     async placeOrder(customerId: string, dto: PlaceOrderDto): Promise<OrderRecord> {
@@ -125,7 +139,8 @@ export class OrdersService {
             const checkoutResult = await client.query<CheckoutRow>(
                 `
                     SELECT id, customer_id, address_id, delivery_zone_id, cart_snapshot,
-                        subtotal, delivery_fee, service_fee, total, currency, payment_method,
+                        subtotal, promotion_id, promotion_code, discount_amount,
+                        delivery_fee, service_fee, total, currency, payment_method,
                         delivery_option, status, expires_at
                     FROM checkout_sessions
                     WHERE id = $1 AND customer_id = $2
@@ -155,6 +170,44 @@ export class OrdersService {
                     [checkout.id],
                 );
                 return { expired: true as const };
+            }
+            if (checkout.promotion_id) {
+                const promotionResult = await client.query<{
+                    id: string;
+                    is_active: boolean;
+                    starts_at: Date | string;
+                    ends_at: Date | string | null;
+                    max_redemptions: number | null;
+                    max_per_customer: number;
+                }>(
+                    `
+                        SELECT id, is_active, starts_at, ends_at, max_redemptions, max_per_customer
+                        FROM promotions
+                        WHERE id = $1
+                        FOR UPDATE
+                    `,
+                    [checkout.promotion_id],
+                );
+                const promotion = promotionResult.rows[0];
+                const [redemptions, customerRedemptions] = await Promise.all([
+                    client.query<{ count: string }>(
+                        'SELECT COUNT(*)::text AS count FROM promotion_redemptions WHERE promotion_id = $1',
+                        [checkout.promotion_id],
+                    ),
+                    client.query<{ count: string }>(
+                        'SELECT COUNT(*)::text AS count FROM promotion_redemptions WHERE promotion_id = $1 AND customer_id = $2',
+                        [checkout.promotion_id, customerId],
+                    ),
+                ]);
+                const now = Date.now();
+                if (!promotion || !promotion.is_active
+                    || new Date(promotion.starts_at).getTime() > now
+                    || (promotion.ends_at !== null && new Date(promotion.ends_at).getTime() <= now)
+                    || (promotion.max_redemptions !== null
+                        && Number(redemptions.rows[0].count) >= promotion.max_redemptions)
+                    || Number(customerRedemptions.rows[0].count) >= promotion.max_per_customer) {
+                    throw new ConflictException('Promotion is no longer available; prepare checkout again');
+                }
             }
 
             await client.query(
@@ -197,21 +250,52 @@ export class OrdersService {
                     INSERT INTO orders (
                         customer_id, checkout_session_id, status, payment_method, delivery_option,
                         address_snapshot, delivery_zone_snapshot, cart_snapshot,
-                        subtotal, delivery_fee, service_fee, total, currency
-                    ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13)
+                        subtotal, promotion_id, promotion_code, discount_amount,
+                        delivery_fee, service_fee, total, currency
+                    ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16)
                     RETURNING id
                 `,
                 [
                     customerId, checkout.id, status, checkout.payment_method, checkout.delivery_option,
                     JSON.stringify(address), JSON.stringify(deliveryZone), JSON.stringify(checkout.cart_snapshot),
-                    checkout.subtotal, checkout.delivery_fee, checkout.service_fee, checkout.total, checkout.currency,
+                    checkout.subtotal, checkout.promotion_id, checkout.promotion_code,
+                    checkout.discount_amount, checkout.delivery_fee, checkout.service_fee,
+                    checkout.total, checkout.currency,
                 ],
             );
+
+            if (checkout.promotion_id && Number(checkout.discount_amount) > 0) {
+                await client.query(
+                    `
+                        INSERT INTO promotion_redemptions (
+                            promotion_id, customer_id, order_id, discount_amount
+                        ) VALUES ($1, $2, $3, $4)
+                    `,
+                    [checkout.promotion_id, customerId, inserted.rows[0].id, checkout.discount_amount],
+                );
+            }
 
             await client.query(
                 'UPDATE checkout_sessions SET status = $2, updated_at = NOW() WHERE id = $1',
                 [checkout.id, status === 'placed' ? 'confirmed' : 'payment_pending'],
             );
+            await this.notificationsService.create(client, {
+                customerId,
+                type: 'order_placed',
+                title: 'Order placed',
+                body: status === 'payment_pending'
+                    ? 'Your order is awaiting payment.'
+                    : 'Your cash-on-delivery order has been placed.',
+                data: { orderId: inserted.rows[0].id },
+                deduplicationKey: `order:${inserted.rows[0].id}:placed`,
+            });
+            if (checkout.payment_method === 'cash') {
+                await this.deliveryService.createForOrder(client, {
+                    id: inserted.rows[0].id,
+                    customerId,
+                    estimatedMinutes: deliveryZone.estimatedMinutes,
+                });
+            }
             for (const item of checkout.cart_snapshot.items) {
                 const stockUpdate = await client.query<{ id: string }>(
                     `
@@ -274,7 +358,8 @@ export class OrdersService {
                 `
                     SELECT o.*,
                         (SELECT p.status FROM payments p WHERE p.order_id = o.id
-                         ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS payment_status
+                         ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS payment_status,
+                        (SELECT d.status FROM deliveries d WHERE d.order_id = o.id) AS delivery_status
                     FROM orders o
                     WHERE o.customer_id = $1
                     ORDER BY o.created_at DESC, o.id DESC
@@ -300,7 +385,8 @@ export class OrdersService {
             `
                 SELECT o.*,
                     (SELECT p.status FROM payments p WHERE p.order_id = o.id
-                     ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS payment_status
+                     ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS payment_status,
+                    (SELECT d.status FROM deliveries d WHERE d.order_id = o.id) AS delivery_status
                 FROM orders o
                 WHERE o.id = $1 AND o.customer_id = $2
             `,
@@ -347,6 +433,15 @@ export class OrdersService {
                 "UPDATE checkout_sessions SET status = 'cancelled', updated_at = NOW() WHERE id = $1",
                 [order.checkout_session_id],
             );
+            await this.deliveryService.cancelForOrder(client, orderId);
+            await this.notificationsService.create(client, {
+                customerId,
+                type: 'order_cancelled',
+                title: 'Order cancelled',
+                body: 'Your order has been cancelled.',
+                data: { orderId },
+                deduplicationKey: `order:${orderId}:cancelled`,
+            });
             const reservations = await client.query<{ product_id: string; quantity: number }>(
                 `
                     SELECT product_id, quantity
@@ -473,6 +568,7 @@ export class OrdersService {
             checkoutId: row.checkout_session_id,
             status: row.status,
             paymentStatus: row.payment_status ?? undefined,
+            deliveryStatus: row.delivery_status ?? undefined,
             paymentMethod: row.payment_method,
             deliveryOption: row.delivery_option,
             address: row.address_snapshot,
@@ -480,6 +576,8 @@ export class OrdersService {
             items: row.cart_snapshot.items,
             summary: {
                 subtotal: Number(row.subtotal),
+                discount: Number(row.discount_amount),
+                promotionCode: row.promotion_code ?? undefined,
                 deliveryFee: Number(row.delivery_fee),
                 serviceFee: Number(row.service_fee),
                 total: Number(row.total),

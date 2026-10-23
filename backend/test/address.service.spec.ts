@@ -1,26 +1,32 @@
+import { randomUUID } from 'crypto';
 import { AddressService, CreateAddressDto } from '../src/address/address.service';
 import { AuthService } from '../src/auth/auth.service';
 import { createTestApplication } from './database-test-utils';
 
 describe('AddressService persistence', () => {
     let addressService: AddressService;
+    let authService: AuthService;
     let customerId: string;
     let otherCustomerId: string;
     let close: () => Promise<void>;
 
-    beforeEach(async () => {
+    beforeAll(async () => {
         const setup = await createTestApplication();
         close = setup.close;
         addressService = setup.app.get(AddressService);
-        const registration = await setup.app.get(AuthService).register({
-            email: `address-${Date.now()}@example.com`,
+        authService = setup.app.get(AuthService);
+    }, 15000);
+
+    beforeEach(async () => {
+        const registration = await authService.register({
+            email: `address-${randomUUID()}@example.com`,
             password: 'StrongPass123!',
             firstName: 'Address',
             lastName: 'Customer',
         });
         customerId = registration.customer.id;
-        const otherRegistration = await setup.app.get(AuthService).register({
-            email: `other-address-${Date.now()}@example.com`,
+        const otherRegistration = await authService.register({
+            email: `other-address-${randomUUID()}@example.com`,
             password: 'StrongPass123!',
             firstName: 'Other',
             lastName: 'Customer',
@@ -28,9 +34,9 @@ describe('AddressService persistence', () => {
         otherCustomerId = otherRegistration.customer.id;
     });
 
-    afterEach(async () => {
+    afterAll(async () => {
         await close();
-    });
+    }, 15000);
 
     function address(overrides: Partial<CreateAddressDto> = {}): CreateAddressDto {
         return {

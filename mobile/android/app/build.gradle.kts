@@ -4,6 +4,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val releaseEnvironment = mapOf(
+    "AQUAFLOW_APPLICATION_ID" to System.getenv("AQUAFLOW_APPLICATION_ID"),
+    "AQUAFLOW_KEYSTORE_FILE" to System.getenv("AQUAFLOW_KEYSTORE_FILE"),
+    "AQUAFLOW_KEYSTORE_PASSWORD" to System.getenv("AQUAFLOW_KEYSTORE_PASSWORD"),
+    "AQUAFLOW_KEY_ALIAS" to System.getenv("AQUAFLOW_KEY_ALIAS"),
+    "AQUAFLOW_KEY_PASSWORD" to System.getenv("AQUAFLOW_KEY_PASSWORD"),
+)
+val releaseBuildRequested = gradle.startParameter.taskNames.any {
+    it.contains("release", ignoreCase = true)
+}
+val releaseApplicationId = releaseEnvironment["AQUAFLOW_APPLICATION_ID"]
+val hasReleaseSigning = releaseEnvironment
+    .filterKeys { it != "AQUAFLOW_APPLICATION_ID" }
+    .values.all { !it.isNullOrBlank() }
+
+if (releaseBuildRequested) {
+    if (releaseApplicationId.isNullOrBlank() || releaseApplicationId.startsWith("com.example.")) {
+        throw GradleException("Configure a unique AQUAFLOW_APPLICATION_ID before a release build")
+    }
+    if (!hasReleaseSigning) {
+        throw GradleException("Configure all AQUAFLOW keystore variables before a release build")
+    }
+}
+
 android {
     namespace = "com.example.aquaflow_mobile"
     compileSdk = flutter.compileSdkVersion
@@ -15,8 +39,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.aquaflow_mobile"
+        applicationId = releaseApplicationId ?: "com.example.aquaflow_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -29,11 +52,22 @@ android {
         versionName = flutter.versionName
     }
 
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseEnvironment["AQUAFLOW_KEYSTORE_FILE"]!!)
+                storePassword = releaseEnvironment["AQUAFLOW_KEYSTORE_PASSWORD"]
+                keyAlias = releaseEnvironment["AQUAFLOW_KEY_ALIAS"]
+                keyPassword = releaseEnvironment["AQUAFLOW_KEY_PASSWORD"]
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }

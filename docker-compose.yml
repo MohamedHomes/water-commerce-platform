@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: aquaflow
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "5432:5432"
     volumes:
@@ -41,9 +41,12 @@ services:
     container_name: aquaflow-backend
     restart: unless-stopped
     environment:
-      NODE_ENV: development
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 3000
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/aquaflow
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/aquaflow
+      JWT_SECRET: ${JWT_SECRET:-aquaflow-dev-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-aquaflow-dev-refresh-secret}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
@@ -62,14 +65,14 @@ services:
     build:
       context: ./admin
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/api/v1}
     container_name: aquaflow-admin
     restart: unless-stopped
-    environment:
-      VITE_API_BASE_URL: http://localhost:3000/api/v1
     depends_on:
       - backend
     ports:
-      - "5173:5173"
+      - "5173:80"
 
 volumes:
   postgres_data:

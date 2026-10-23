@@ -26,6 +26,22 @@ The payments API provides provider-neutral intent persistence and signed,
 idempotent webhook handling. Only its deterministic test adapter is configured
 for automated tests; no production payment processor is connected.
 
+The app also includes customer delivery status history and a persistent in-app
+notification inbox. Driver dispatch/live tracking and external email, SMS, and
+push notification providers remain unconfigured.
+
+Promotion codes are calculated server-side during checkout and revalidated
+against their configured limits when the order is placed. The admin portal
+uses database-backed operations metrics, an order queue, and promotion
+management; payment capture and delivery dispatch remain unavailable.
+
+Customers can submit product reviews only for delivered purchases. Reviews
+remain hidden until administrator moderation.
+
+Backend and admin containers have production-oriented build stages, but Docker
+runtime and PostgreSQL 16 deployment verification have not been run in this
+environment.
+
 ## Product Vision
 
 The platform is a production-grade commerce and delivery solution for water products and adjacent FMCG items. The solution is designed around business capability domains, not a clone of any existing app.

@@ -6,6 +6,7 @@ void main() {
     final order = OrderRecord.fromJson({
       'id': 'order-id',
       'status': 'payment_pending',
+      'deliveryStatus': 'delivered',
       'paymentMethod': 'card',
       'deliveryOption': 'standard',
       'address': {
@@ -32,6 +33,7 @@ void main() {
     });
 
     expect(order.status, 'payment_pending');
+    expect(order.deliveryStatus, 'delivered');
     expect(order.address.city, 'Riyadh');
     expect(order.items.single.quantity, 2);
     expect(order.total, 15.5);
@@ -51,5 +53,40 @@ void main() {
     expect(intent.provider, 'test');
     expect(intent.status, 'pending');
     expect(intent.checkoutUrl, isNull);
+  });
+
+  test('parses server-calculated promotion discounts in checkout summary', () {
+    final summary = CheckoutSummary.fromJson({
+      'checkoutId': 'checkout-id',
+      'summary': {
+        'subtotal': 20,
+        'discount': 2,
+        'promotionCode': 'SAVE10',
+        'deliveryFee': 3,
+        'serviceFee': 0,
+        'total': 21,
+        'currency': 'SAR',
+      },
+    });
+
+    expect(summary.discount, 2);
+    expect(summary.promotionCode, 'SAVE10');
+    expect(summary.total, 21);
+  });
+
+  test('parses an in-app notification with read state', () {
+    final notification = CustomerNotification.fromJson({
+      'id': 'notification-id',
+      'type': 'order_placed',
+      'title': 'Order placed',
+      'body': 'Your order has been placed.',
+      'data': {'orderId': 'order-id'},
+      'readAt': null,
+      'createdAt': '2026-10-23T15:00:00.000Z',
+    });
+
+    expect(notification.type, 'order_placed');
+    expect(notification.title, 'Order placed');
+    expect(notification.isRead, isFalse);
   });
 }

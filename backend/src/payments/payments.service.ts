@@ -12,6 +12,8 @@ import { IsString, IsUUID, Length, Matches } from 'class-validator';
 import { createHash } from 'crypto';
 import { QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import { DeliveryService } from '../delivery/delivery.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
     PAYMENT_PROVIDER,
     PaymentProvider,
@@ -72,6 +74,8 @@ export class PaymentsService {
 
     constructor(
         private readonly database: DatabaseService,
+        private readonly deliveryService: DeliveryService,
+        private readonly notificationsService: NotificationsService,
         @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     ) { }
 
@@ -280,7 +284,34 @@ export class PaymentsService {
                     "UPDATE checkout_sessions SET status = 'confirmed', updated_at = NOW() WHERE id = $1",
                     [order.rows[0].checkout_session_id],
                 );
+                const zone = await client.query<{ estimated_minutes: number }>(
+                    `
+                        SELECT z.estimated_minutes
+                        FROM orders o
+                        JOIN delivery_zones z
+                          ON o.delivery_zone_snapshot->>'id' = z.id
+                        WHERE o.id = $1
+                    `,
+                    [payment.order_id],
+                );
+                if (zone.rows[0]) {
+                    await this.deliveryService.createForOrder(client, {
+                        id: payment.order_id,
+                        customerId: payment.customer_id,
+                        estimatedMinutes: zone.rows[0].estimated_minutes,
+                    });
+                }
             }
+            await this.notificationsService.create(client, {
+                customerId: payment.customer_id,
+                type: succeeded ? 'payment_succeeded' : 'payment_failed',
+                title: succeeded ? 'Payment received' : 'Payment failed',
+                body: succeeded
+                    ? 'Payment for your order was confirmed.'
+                    : 'Payment was not completed. You can try another payment attempt.',
+                data: { orderId: payment.order_id, paymentId: payment.id },
+                deduplicationKey: `payment:${payment.id}:${succeeded ? 'succeeded' : 'failed'}`,
+            });
 
             return {
                 accepted: true,
