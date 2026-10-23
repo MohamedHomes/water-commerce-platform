@@ -1,0 +1,15 @@
+INFO: Could not find files for the given pattern(s).
+INFO: Could not find files for the given pattern(s).
+[SC] EnumQueryServicesStatus:OpenService FAILED 1060:
+
+The specified service does not exist as an installed service.
+
+[SC] EnumQueryServicesStatus:OpenService FAILED 1060:
+
+The specified service does not exist as an installed service.
+
+[SC] EnumQueryServicesStatus:OpenService FAILED 1060:
+
+The specified service does not exist as an installed service.
+
+ERROR: The system was unable to find the specified registry key or value.

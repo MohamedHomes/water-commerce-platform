@@ -1,0 +1,10 @@
+PASS test/cart.e2e-spec.ts
+  Cart and pricing
+    √ adds, updates, validates, and totals cart items (38 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+Snapshots:   0 total
+Time:        4.04 s, estimated 5 s
+Ran all test suites within paths "test/cart.e2e-spec.ts".
+Test results written to: cart-jest-report.json

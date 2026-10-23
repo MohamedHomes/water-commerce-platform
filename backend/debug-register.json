@@ -1,0 +1,14 @@
+{
+  "status": 400,
+  "body": {
+    "message": [
+      "property email should not exist",
+      "property password should not exist",
+      "property firstName should not exist",
+      "property lastName should not exist",
+      "property phone should not exist"
+    ],
+    "error": "Bad Request",
+    "statusCode": 400
+  }
+}

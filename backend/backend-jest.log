@@ -1,0 +1,10 @@
+PASS test/auth.e2e-spec.ts
+PASS test/cart.e2e-spec.ts
+PASS test/catalog-search.e2e-spec.ts
+PASS test/app.e2e-spec.ts
+
+Test Suites: 4 passed, 4 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        6.023 s, estimated 11 s
+Ran all test suites.

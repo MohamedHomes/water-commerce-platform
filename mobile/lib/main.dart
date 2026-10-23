@@ -1,0 +1,1468 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
+
+import 'api_config.dart';
+import 'cart_screen.dart';
+
+void main() {
+  runApp(const ProviderScope(child: AquaFlowApp()));
+}
+
+final _secureStorage = FlutterSecureStorage();
+
+Address? _findAddress(List<Address> addresses, String? addressId) {
+  for (final address in addresses) {
+    if (address.id == addressId) return address;
+  }
+  return null;
+}
+
+class Address {
+  const Address({
+    required this.id,
+    required this.label,
+    required this.recipientName,
+    required this.phone,
+    required this.city,
+    required this.district,
+    required this.street,
+    required this.building,
+    this.apartment,
+    this.floor,
+    this.latitude,
+    this.longitude,
+    this.notes,
+    this.isDefault = false,
+  });
+
+  final String id;
+  final String label;
+  final String recipientName;
+  final String phone;
+  final String city;
+  final String district;
+  final String street;
+  final String building;
+  final String? apartment;
+  final String? floor;
+  final double? latitude;
+  final double? longitude;
+  final String? notes;
+  final bool isDefault;
+
+  factory Address.fromJson(Map<String, dynamic> json) {
+    return Address(
+      id: json['id']?.toString() ?? '',
+      label: json['label']?.toString() ?? 'Home',
+      recipientName: json['recipientName']?.toString() ?? 'Customer',
+      phone: json['phone']?.toString() ?? '',
+      city: json['city']?.toString() ?? '',
+      district: json['district']?.toString() ?? '',
+      street: json['street']?.toString() ?? '',
+      building: json['building']?.toString() ?? '',
+      apartment: json['apartment']?.toString(),
+      floor: json['floor']?.toString(),
+      latitude: json['latitude'] is num ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] is num ? (json['longitude'] as num).toDouble() : null,
+      notes: json['notes']?.toString(),
+      isDefault: json['isDefault'] == true,
+    );
+  }
+}
+
+class CheckoutSummary {
+  const CheckoutSummary({
+    required this.checkoutId,
+    required this.subtotal,
+    required this.deliveryFee,
+    required this.serviceFee,
+    required this.total,
+    required this.currency,
+  });
+
+  final String checkoutId;
+  final double subtotal;
+  final double deliveryFee;
+  final double serviceFee;
+  final double total;
+  final String currency;
+
+  factory CheckoutSummary.fromJson(Map<String, dynamic> json) {
+    final summary = json['summary'] as Map<String, dynamic>? ?? {};
+    return CheckoutSummary(
+      checkoutId: json['checkoutId']?.toString() ?? '',
+      subtotal: (summary['subtotal'] ?? 0).toDouble(),
+      deliveryFee: (summary['deliveryFee'] ?? 0).toDouble(),
+      serviceFee: (summary['serviceFee'] ?? 0).toDouble(),
+      total: (summary['total'] ?? 0).toDouble(),
+      currency: (summary['currency'] ?? 'SAR').toString(),
+    );
+  }
+}
+
+class OrderLine {
+  const OrderLine({
+    required this.productId,
+    required this.name,
+    required this.quantity,
+    required this.unitPrice,
+    required this.lineTotal,
+  });
+
+  final String productId;
+  final String name;
+  final int quantity;
+  final double unitPrice;
+  final double lineTotal;
+
+  factory OrderLine.fromJson(Map<String, dynamic> json) {
+    return OrderLine(
+      productId: json['productId']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Product',
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
+      lineTotal: (json['lineTotal'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+class OrderRecord {
+  const OrderRecord({
+    required this.id,
+    required this.status,
+    required this.paymentMethod,
+    this.paymentStatus,
+    required this.deliveryOption,
+    required this.address,
+    required this.items,
+    required this.total,
+    required this.currency,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String status;
+  final String paymentMethod;
+  final String? paymentStatus;
+  final String deliveryOption;
+  final Address address;
+  final List<OrderLine> items;
+  final double total;
+  final String currency;
+  final DateTime createdAt;
+
+  factory OrderRecord.fromJson(Map<String, dynamic> json) {
+    final addressJson = json['address'] as Map<String, dynamic>? ?? {};
+    final summary = json['summary'] as Map<String, dynamic>? ?? {};
+    final rawItems = json['items'] as List? ?? [];
+    return OrderRecord(
+      id: json['id']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'unknown',
+      paymentMethod: json['paymentMethod']?.toString() ?? '',
+      paymentStatus: json['paymentStatus']?.toString(),
+      deliveryOption: json['deliveryOption']?.toString() ?? '',
+      address: Address.fromJson(addressJson),
+      items: rawItems
+          .map((item) => OrderLine.fromJson(item as Map<String, dynamic>))
+          .toList(),
+      total: (summary['total'] as num?)?.toDouble() ?? 0,
+      currency: summary['currency']?.toString() ?? 'SAR',
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class PaymentIntent {
+  const PaymentIntent({
+    required this.id,
+    required this.provider,
+    required this.status,
+    required this.amount,
+    required this.currency,
+    this.checkoutUrl,
+  });
+
+  final String id;
+  final String provider;
+  final String status;
+  final double amount;
+  final String currency;
+  final String? checkoutUrl;
+
+  factory PaymentIntent.fromJson(Map<String, dynamic> json) {
+    return PaymentIntent(
+      id: json['id']?.toString() ?? '',
+      provider: json['provider']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'unknown',
+      amount: (json['amount'] as num?)?.toDouble() ?? 0,
+      currency: json['currency']?.toString() ?? 'SAR',
+      checkoutUrl: json['checkoutUrl']?.toString(),
+    );
+  }
+}
+
+class DeliveryZone {
+  const DeliveryZone({
+    required this.id,
+    required this.city,
+    required this.name,
+    required this.baseFee,
+    required this.estimatedMinutes,
+  });
+
+  final String id;
+  final String city;
+  final String name;
+  final double baseFee;
+  final int estimatedMinutes;
+
+  factory DeliveryZone.fromJson(Map<String, dynamic> json) {
+    return DeliveryZone(
+      id: json['id'].toString(),
+      city: json['city'].toString(),
+      name: json['name'].toString(),
+      baseFee: (json['baseFee'] as num).toDouble(),
+      estimatedMinutes: (json['estimatedMinutes'] as num).toInt(),
+    );
+  }
+}
+
+class ApiClient {
+  ApiClient._();
+  static final Dio dio = Dio(BaseOptions(baseUrl: apiBaseUrl, headers: {'Content-Type': 'application/json'}));
+
+  static Future<void> authenticate({
+    required bool register,
+    required String email,
+    required String password,
+    String firstName = '',
+    String lastName = '',
+  }) async {
+    final response = await dio.post(
+      register ? '/auth/register' : '/auth/login',
+      data: register
+          ? {
+              'email': email,
+              'password': password,
+              'firstName': firstName,
+              'lastName': lastName,
+            }
+          : {'email': email, 'password': password},
+    );
+    await _secureStorage.write(key: 'auth_token', value: response.data['accessToken'] as String);
+    await _secureStorage.write(key: 'refresh_token', value: response.data['refreshToken'] as String);
+  }
+
+  static Future<String> readToken() async {
+    final token = await _secureStorage.read(key: 'auth_token');
+    if (token == null || token.isEmpty) {
+      throw StateError('Sign in is required to manage addresses or checkout.');
+    }
+    return token;
+  }
+
+  static Future<List<Address>> fetchAddresses() async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/addresses',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    final items = (response.data['items'] as List? ?? []);
+    return items.map((item) => Address.fromJson(item as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<String>> fetchCities() async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/addresses/cities',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    final items = response.data['items'] as List? ?? [];
+    return items
+        .map((item) => (item as Map<String, dynamic>)['name'].toString())
+        .toList();
+  }
+
+  static Future<List<DeliveryZone>> fetchDeliveryZones(String city) async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/addresses/delivery-zones',
+      queryParameters: {'city': city},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    final items = response.data['items'] as List? ?? [];
+    return items
+        .map((item) => DeliveryZone.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<void> saveAddress(Map<String, dynamic> payload, {String? addressId}) async {
+    final token = await readToken();
+    final options = Options(headers: {'Authorization': 'Bearer $token'});
+    if (addressId != null) {
+      await dio.patch('/addresses/$addressId', data: payload, options: options);
+    } else {
+      await dio.post('/addresses', data: payload, options: options);
+    }
+  }
+
+  static Future<CheckoutSummary> prepareCheckout({
+    required String addressId,
+    required String deliveryZoneId,
+    required String deliveryOption,
+    required String paymentMethod,
+  }) async {
+    final token = await readToken();
+    final response = await dio.post(
+      '/checkout/prepare',
+      data: {
+        'addressId': addressId,
+        'deliveryZoneId': deliveryZoneId,
+        'deliveryOption': deliveryOption,
+        'paymentMethod': paymentMethod,
+      },
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return CheckoutSummary.fromJson(response.data);
+  }
+
+  static Future<OrderRecord> placeOrder(String checkoutId) async {
+    final token = await readToken();
+    final response = await dio.post(
+      '/orders',
+      data: {'checkoutId': checkoutId},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return OrderRecord.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  static Future<List<OrderRecord>> fetchOrders({int page = 1, int limit = 20}) async {
+    final token = await readToken();
+    final response = await dio.get(
+      '/orders',
+      queryParameters: {'page': page, 'limit': limit},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    final items = response.data['items'] as List? ?? [];
+    return items
+        .map((item) => OrderRecord.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<void> cancelOrder(String orderId) async {
+    final token = await readToken();
+    await dio.post(
+      '/orders/$orderId/cancel',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+  }
+
+  static Future<void> reorder(String orderId) async {
+    final token = await readToken();
+    await dio.post(
+      '/orders/$orderId/reorder',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+  }
+
+  static Future<PaymentIntent> createPaymentIntent({
+    required String orderId,
+    required String idempotencyKey,
+  }) async {
+    final token = await readToken();
+    final response = await dio.post(
+      '/payments/intents',
+      data: {'orderId': orderId, 'idempotencyKey': idempotencyKey},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return PaymentIntent.fromJson(response.data as Map<String, dynamic>);
+  }
+}
+
+class AddressState {
+  const AddressState({
+    required this.items,
+    required this.loading,
+    required this.error,
+  });
+
+  final List<Address> items;
+  final bool loading;
+  final String? error;
+
+  AddressState copyWith({
+    List<Address>? items,
+    bool? loading,
+    String? error,
+    bool clearError = false,
+  }) {
+    return AddressState(
+      items: items ?? this.items,
+      loading: loading ?? this.loading,
+      error: clearError ? null : error ?? this.error,
+    );
+  }
+}
+
+final addressProvider = StateNotifierProvider<AddressController, AddressState>((ref) {
+  return AddressController();
+});
+
+class AddressController extends StateNotifier<AddressState> {
+  AddressController() : super(const AddressState(items: [], loading: false, error: null));
+
+  Future<void> load() async {
+    state = state.copyWith(loading: true, clearError: true);
+    try {
+      final items = await ApiClient.fetchAddresses();
+      state = state.copyWith(items: items, loading: false, clearError: true);
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+    }
+  }
+
+  Future<void> create(Map<String, dynamic> payload) async {
+    try {
+      await ApiClient.saveAddress(payload);
+      await load();
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> update(Map<String, dynamic> payload, String id) async {
+    try {
+      await ApiClient.saveAddress(payload, addressId: id);
+      await load();
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> remove(String id) async {
+    final token = await ApiClient.readToken();
+    try {
+      await ApiClient.dio.delete(
+        '/addresses/$id',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      await load();
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+      rethrow;
+    }
+  }
+
+  Future<void> setDefault(String id) async {
+    try {
+      final token = await ApiClient.readToken();
+      await ApiClient.dio.post(
+        '/addresses/$id/default',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      await load();
+    } catch (error) {
+      state = state.copyWith(loading: false, error: error.toString());
+      rethrow;
+    }
+  }
+}
+
+final appRouter = GoRouter(
+  initialLocation: '/login',
+  redirect: (_, state) async {
+    final token = await _secureStorage.read(key: 'auth_token');
+    final atLogin = state.matchedLocation == '/login';
+    if ((token == null || token.isEmpty) && !atLogin) return '/login';
+    if (token != null && token.isNotEmpty && atLogin) return '/';
+    return null;
+  },
+  routes: [
+    GoRoute(
+      path: '/login',
+      builder: (_, __) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: '/',
+      builder: (_, __) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/cart',
+      builder: (_, __) => const CartScreen(),
+    ),
+    GoRoute(
+      path: '/addresses',
+      builder: (_, __) => const AddressListScreen(),
+    ),
+    GoRoute(
+      path: '/addresses/new',
+      builder: (_, __) => const AddressEditorScreen(),
+    ),
+    GoRoute(
+      path: '/addresses/:addressId/edit',
+      builder: (_, state) => AddressEditorScreen(address: state.extra as Address?),
+    ),
+    GoRoute(
+      path: '/checkout',
+      builder: (_, __) => const CheckoutScreen(),
+    ),
+    GoRoute(
+      path: '/orders',
+      builder: (_, __) => const OrdersScreen(),
+    ),
+  ],
+);
+
+class AquaFlowApp extends StatelessWidget {
+  const AquaFlowApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'AquaFlow',
+      debugShowCheckedModeBanner: false,
+      routerConfig: appRouter,
+      supportedLocales: const [Locale('en'), Locale('ar')],
+      localizationsDelegates: const [
+        GlobalWidgetsLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E9F6E)),
+        useMaterial3: true,
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('AquaFlow'),
+        actions: [
+          IconButton(
+            tooltip: 'Sign out',
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await _secureStorage.delete(key: 'auth_token');
+              await _secureStorage.delete(key: 'refresh_token');
+              if (context.mounted) context.go('/login');
+            },
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Fresh water, delivered with care',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: const [
+                _FeatureChip(label: 'Bottled Water'),
+                _FeatureChip(label: 'Bulk Packs'),
+                _FeatureChip(label: 'Delivery'),
+                _FeatureChip(label: 'Customer Care'),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _ActionCard(
+              icon: Icons.location_on_outlined,
+              title: 'Addresses',
+              subtitle: 'Manage delivery addresses and defaults',
+              onPressed: () => context.go('/addresses'),
+            ),
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.payment_outlined,
+              title: 'Checkout',
+              subtitle: 'Review delivery and payment details',
+              onPressed: () => context.go('/checkout'),
+            ),
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.shopping_cart_outlined,
+              title: 'Cart',
+              subtitle: 'Review order total before checkout',
+              onPressed: () => context.go('/cart'),
+            ),
+            const SizedBox(height: 12),
+            _ActionCard(
+              icon: Icons.receipt_long_outlined,
+              title: 'Orders',
+              subtitle: 'View, cancel, or reorder your purchases',
+              onPressed: () => context.go('/orders'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  bool _register = false;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      await ApiClient.authenticate(
+        register: _register,
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+      );
+      if (mounted) context.go('/');
+    } catch (error) {
+      if (mounted) setState(() { _loading = false; _error = error.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('AquaFlow')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              padding: const EdgeInsets.all(24),
+              shrinkWrap: true,
+              children: [
+                Text(_register ? 'Create account' : 'Sign in', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 20),
+                if (_register) ...[
+                  TextFormField(
+                    controller: _firstNameController,
+                    decoration: const InputDecoration(labelText: 'First name'),
+                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? 'Enter your first name' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _lastNameController,
+                    decoration: const InputDecoration(labelText: 'Last name'),
+                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? 'Enter your last name' : null,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                  validator: (value) => value == null || !value.contains('@') ? 'Enter a valid email' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  validator: (value) => value == null || value.length < 8 ? 'Password must be at least 8 characters' : null,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _loading ? null : _submit,
+                  child: _loading ? const CircularProgressIndicator() : Text(_register ? 'Create account' : 'Sign in'),
+                ),
+                TextButton(
+                  onPressed: _loading ? null : () => setState(() { _register = !_register; _error = null; }),
+                  child: Text(_register ? 'I already have an account' : 'Create an account'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AddressListScreen extends ConsumerStatefulWidget {
+  const AddressListScreen({super.key});
+
+  @override
+  ConsumerState<AddressListScreen> createState() => _AddressListScreenState();
+}
+
+class _AddressListScreenState extends ConsumerState<AddressListScreen> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() => ref.read(addressProvider.notifier).load());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(addressProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Addresses')),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => context.push('/addresses/new'),
+        child: const Icon(Icons.add),
+      ),
+      body: state.loading
+          ? const Center(child: CircularProgressIndicator())
+          : state.error != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(state.error!),
+                      const SizedBox(height: 12),
+                      FilledButton(
+                        onPressed: () => ref.read(addressProvider.notifier).load(),
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                )
+              : state.items.isEmpty
+                  ? const Center(
+                      child: Text('No addresses yet. Add your first delivery address.'),
+                    )
+                  : ListView.builder(
+                      itemCount: state.items.length,
+                      itemBuilder: (_, index) {
+                        final item = state.items[index];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: ListTile(
+                            title: Text(item.label),
+                            subtitle: Text('${item.recipientName}\n${item.city}, ${item.district}\n${item.street}, ${item.building}${item.apartment != null ? ' - Apt ${item.apartment}' : ''}'),
+                            isThreeLine: true,
+                            trailing: PopupMenuButton<String>(
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                const PopupMenuItem(value: 'default', child: Text('Set default')),
+                                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                              ],
+                              onSelected: (value) async {
+                                if (value == 'edit') {
+                                  context.push('/addresses/${item.id}/edit', extra: item);
+                                }
+                                if (value == 'default') {
+                                  try {
+                                    await ref.read(addressProvider.notifier).setDefault(item.id);
+                                  } catch (_) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Could not update the default address.')),
+                                      );
+                                    }
+                                  }
+                                }
+                                if (value == 'delete') {
+                                  try {
+                                    await ref.read(addressProvider.notifier).remove(item.id);
+                                  } catch (_) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Could not delete the address.')),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+    );
+  }
+}
+
+class AddressEditorScreen extends ConsumerStatefulWidget {
+  const AddressEditorScreen({this.address, this.initialCities, super.key});
+
+  final Address? address;
+  final List<String>? initialCities;
+
+  @override
+  ConsumerState<AddressEditorScreen> createState() => _AddressEditorScreenState();
+}
+
+class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _labelController = TextEditingController(text: 'Home');
+  final _recipientController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _districtController = TextEditingController();
+  final _streetController = TextEditingController();
+  final _buildingController = TextEditingController();
+  final _apartmentController = TextEditingController();
+  final _floorController = TextEditingController();
+  final _notesController = TextEditingController();
+  List<String> _cities = [];
+  bool _loadingCities = true;
+  bool _saving = false;
+  bool _isDefault = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final address = widget.address;
+    if (address != null) {
+      _labelController.text = address.label;
+      _recipientController.text = address.recipientName;
+      _phoneController.text = address.phone;
+      _cityController.text = address.city;
+      _districtController.text = address.district;
+      _streetController.text = address.street;
+      _buildingController.text = address.building;
+      _apartmentController.text = address.apartment ?? '';
+      _floorController.text = address.floor ?? '';
+      _notesController.text = address.notes ?? '';
+      _isDefault = address.isDefault;
+    }
+    if (widget.initialCities != null) {
+      _cities = widget.initialCities!;
+      _loadingCities = false;
+    } else {
+      _loadCities();
+    }
+  }
+
+  Future<void> _loadCities() async {
+    try {
+      final cities = await ApiClient.fetchCities();
+      if (!mounted) return;
+      setState(() {
+        _cities = cities;
+        _loadingCities = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadingCities = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _labelController.dispose();
+    _recipientController.dispose();
+    _phoneController.dispose();
+    _cityController.dispose();
+    _districtController.dispose();
+    _streetController.dispose();
+    _buildingController.dispose();
+    _apartmentController.dispose();
+    _floorController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.address == null ? 'Add address' : 'Edit address')),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (_loadingCities) const LinearProgressIndicator(),
+            if (_error != null) ...[
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              TextButton(onPressed: _loadCities, child: const Text('Retry')),
+            ],
+            TextFormField(
+              controller: _labelController,
+              decoration: const InputDecoration(labelText: 'Label'),
+              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a label' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _recipientController,
+              decoration: const InputDecoration(labelText: 'Recipient name'),
+              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a recipient name' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(labelText: 'Phone'),
+              validator: (value) => value == null || !RegExp(r'^[+0-9\s-]{7,20}$').hasMatch(value.trim())
+                  ? 'Enter a valid phone number'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _cities.contains(_cityController.text) ? _cityController.text : null,
+              decoration: const InputDecoration(labelText: 'City'),
+              items: _cities.map((city) => DropdownMenuItem(value: city, child: Text(city))).toList(),
+              onChanged: (city) => _cityController.text = city ?? '',
+              validator: (value) => value == null ? 'Select a configured city' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _districtController,
+              decoration: const InputDecoration(labelText: 'District'),
+              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a district' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _streetController,
+              decoration: const InputDecoration(labelText: 'Street'),
+              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a street' : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _buildingController,
+              decoration: const InputDecoration(labelText: 'Building'),
+              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a building' : null,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: TextFormField(controller: _apartmentController, decoration: const InputDecoration(labelText: 'Apartment'))),
+                const SizedBox(width: 12),
+                Expanded(child: TextFormField(controller: _floorController, decoration: const InputDecoration(labelText: 'Floor'))),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextFormField(controller: _notesController, decoration: const InputDecoration(labelText: 'Notes')),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _isDefault,
+              onChanged: (value) => setState(() => _isDefault = value ?? false),
+              title: const Text('Set as default address'),
+            ),
+            if (_error != null)
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _saving || _loadingCities ? null : () async {
+                if (!_formKey.currentState!.validate()) return;
+                setState(() { _saving = true; _error = null; });
+                final payload = {
+                  'label': _labelController.text.trim(),
+                  'recipientName': _recipientController.text.trim(),
+                  'phone': _phoneController.text.trim(),
+                  'city': _cityController.text,
+                  'district': _districtController.text.trim(),
+                  'street': _streetController.text.trim(),
+                  'building': _buildingController.text.trim(),
+                  'apartment': _apartmentController.text.trim(),
+                  'floor': _floorController.text.trim(),
+                  'notes': _notesController.text.trim(),
+                  'isDefault': _isDefault,
+                };
+                try {
+                  if (widget.address == null) {
+                    await ref.read(addressProvider.notifier).create(payload);
+                  } else {
+                    await ref.read(addressProvider.notifier).update(payload, widget.address!.id);
+                  }
+                  if (context.mounted) context.pop();
+                } catch (error) {
+                  if (mounted) setState(() { _saving = false; _error = error.toString(); });
+                }
+              },
+              child: _saving ? const CircularProgressIndicator() : const Text('Save address'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CheckoutScreen extends ConsumerStatefulWidget {
+  const CheckoutScreen({super.key});
+
+  @override
+  ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
+}
+
+class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
+  String deliveryOption = 'standard';
+  String paymentMethod = 'card';
+  bool loading = true;
+  CheckoutSummary? summary;
+  List<DeliveryZone> zones = [];
+  String? selectedAddressId;
+  String? selectedZoneId;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_loadCheckoutData);
+  }
+
+  Future<void> _loadCheckoutData() async {
+    setState(() { loading = true; error = null; });
+    await ref.read(addressProvider.notifier).load();
+    final addressState = ref.read(addressProvider);
+    if (addressState.error != null) {
+      if (mounted) setState(() { loading = false; error = addressState.error; });
+      return;
+    }
+    final addresses = addressState.items;
+    if (addresses.isEmpty) {
+      if (mounted) setState(() { loading = false; });
+      return;
+    }
+    final selected = addresses.firstWhere(
+      (address) => address.isDefault,
+      orElse: () => addresses.first,
+    );
+    selectedAddressId = selected.id;
+    await _loadZones(selected.city);
+    if (mounted) setState(() { loading = false; });
+  }
+
+  Future<void> _loadZones(String city) async {
+    try {
+      final result = await ApiClient.fetchDeliveryZones(city);
+      if (!mounted) return;
+      setState(() {
+        zones = result;
+        selectedZoneId = result.isEmpty ? null : result.first.id;
+        error = result.isEmpty ? 'No delivery zones are configured for $city.' : null;
+      });
+    } catch (exception) {
+      if (mounted) setState(() { zones = []; selectedZoneId = null; error = exception.toString(); });
+    }
+  }
+
+  Future<void> prepareCheckout() async {
+    final addresses = ref.read(addressProvider).items;
+    final selectedAddress = _findAddress(addresses, selectedAddressId);
+    if (selectedAddress == null || selectedZoneId == null) {
+      setState(() { error = 'Select a delivery address and zone before continuing.'; });
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+
+    try {
+      final response = await ApiClient.prepareCheckout(
+        addressId: selectedAddress.id,
+        deliveryZoneId: selectedZoneId!,
+        deliveryOption: deliveryOption,
+        paymentMethod: paymentMethod,
+      );
+      if (mounted) setState(() { summary = response; loading = false; });
+    } catch (exception) {
+      if (mounted) setState(() { summary = null; loading = false; error = exception.toString(); });
+    }
+  }
+
+  Future<void> placeOrder() async {
+    final checkoutId = summary?.checkoutId;
+    if (checkoutId == null || checkoutId.isEmpty) {
+      setState(() { error = 'Review your checkout before placing the order.'; });
+      return;
+    }
+    setState(() { loading = true; error = null; });
+    try {
+      await ApiClient.placeOrder(checkoutId);
+      if (mounted) context.go('/orders');
+    } catch (exception) {
+      if (mounted) setState(() { loading = false; error = exception.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final addresses = ref.watch(addressProvider).items;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Checkout')),
+      body: loading && addresses.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text('Delivery address', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          if (addresses.isEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('No saved addresses.'),
+                TextButton.icon(
+                  onPressed: () async {
+                    await context.push('/addresses/new');
+                    await _loadCheckoutData();
+                  },
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: const Text('Add address'),
+                ),
+              ],
+            )
+          else
+            DropdownButtonFormField<String>(
+              initialValue: selectedAddressId,
+              decoration: const InputDecoration(labelText: 'Choose an address'),
+              items: addresses.map((address) => DropdownMenuItem(
+                value: address.id,
+                child: Text('${address.label} · ${address.city}, ${address.street}', overflow: TextOverflow.ellipsis),
+              )).toList(),
+              onChanged: (id) {
+                final address = _findAddress(addresses, id);
+                setState(() { selectedAddressId = id; summary = null; });
+                if (address != null) _loadZones(address.city);
+              },
+            ),
+          const SizedBox(height: 20),
+          const Text('Delivery zone', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: zones.any((zone) => zone.id == selectedZoneId) ? selectedZoneId : null,
+            decoration: const InputDecoration(labelText: 'Choose a delivery zone'),
+            items: zones.map((zone) => DropdownMenuItem(
+              value: zone.id,
+              child: Text('${zone.name} · ${zone.estimatedMinutes} min'),
+            )).toList(),
+            onChanged: (id) => setState(() { selectedZoneId = id; summary = null; }),
+          ),
+          const SizedBox(height: 20),
+          const Text('Delivery option', style: TextStyle(fontWeight: FontWeight.bold)),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'standard', label: Text('Standard')),
+              ButtonSegment(value: 'express', label: Text('Express')),
+            ],
+            selected: {deliveryOption},
+            onSelectionChanged: (value) => setState(() { deliveryOption = value.first; summary = null; }),
+          ),
+          const SizedBox(height: 20),
+          const Text('Payment method', style: TextStyle(fontWeight: FontWeight.bold)),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'card', label: Text('Card')),
+              ButtonSegment(value: 'cash', label: Text('Cash')),
+            ],
+            selected: {paymentMethod},
+            onSelectionChanged: (value) => setState(() { paymentMethod = value.first; summary = null; }),
+          ),
+          if (error != null) ...[
+            const SizedBox(height: 16),
+            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            TextButton.icon(onPressed: _loadCheckoutData, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+          ],
+          if (summary != null) ...[
+            if (paymentMethod == 'card') ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Card payment processing is not available yet. The order will remain payment pending.',
+              ),
+            ],
+            const SizedBox(height: 20),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Subtotal'), Text('${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')]),
+                    const SizedBox(height: 8),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Delivery'), Text('${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')]),
+                    const SizedBox(height: 8),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Service fee'), Text('${summary!.currency} ${summary!.serviceFee.toStringAsFixed(2)}')]),
+                    const Divider(),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)), Text('${summary!.currency} ${summary!.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: loading || addresses.isEmpty || zones.isEmpty
+                  ? null
+                  : summary == null ? prepareCheckout : placeOrder,
+              child: loading
+                  ? const CircularProgressIndicator()
+                  : Text(summary == null ? 'Review order' : 'Place order'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class OrdersScreen extends StatefulWidget {
+  const OrdersScreen({super.key});
+
+  @override
+  State<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  List<OrderRecord> orders = [];
+  final Set<String> _startingPayments = {};
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    setState(() { loading = true; error = null; });
+    try {
+      final result = await ApiClient.fetchOrders();
+      if (mounted) setState(() { orders = result; loading = false; });
+    } catch (exception) {
+      if (mounted) setState(() { loading = false; error = exception.toString(); });
+    }
+  }
+
+  Future<void> _cancelOrder(OrderRecord order) async {
+    try {
+      await ApiClient.cancelOrder(order.id);
+      await _loadOrders();
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(exception.toString())),
+        );
+      }
+    }
+  }
+
+  Future<void> _reorder(OrderRecord order) async {
+    try {
+      await ApiClient.reorder(order.id);
+      if (mounted) context.go('/cart');
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(exception.toString())),
+        );
+      }
+    }
+  }
+
+  Future<void> _startPayment(OrderRecord order) async {
+    if (_startingPayments.contains(order.id)) return;
+    setState(() => _startingPayments.add(order.id));
+    try {
+      final intent = await ApiClient.createPaymentIntent(
+        orderId: order.id,
+        idempotencyKey: '${order.id}-mobile-attempt-1',
+      );
+      await _loadOrders();
+      if (!mounted) return;
+      final message = intent.checkoutUrl == null
+          ? 'Payment intent created by ${intent.provider}; no payment was taken and no provider checkout is configured.'
+          : 'Payment intent created. Continue through the provider checkout.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (exception) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Payment could not be started: $exception')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _startingPayments.remove(order.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Orders')),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : error != null
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(error!),
+                      const SizedBox(height: 12),
+                      FilledButton(onPressed: _loadOrders, child: const Text('Retry')),
+                    ],
+                  ),
+                )
+              : orders.isEmpty
+                  ? const Center(child: Text('You have no orders yet.'))
+                  : RefreshIndicator(
+                      onRefresh: _loadOrders,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: orders.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final order = orders[index];
+                          final canCancel = order.status == 'placed' ||
+                              order.status == 'payment_pending';
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('Order ${order.id.substring(0, 8)}'),
+                                      Chip(label: Text(order.status.replaceAll('_', ' '))),
+                                    ],
+                                  ),
+                                  Text('${order.address.label} · ${order.address.city}'),
+                                  const SizedBox(height: 8),
+                                  ...order.items.map((item) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Text('${item.quantity} × ${item.name}'),
+                                      )),
+                                  const Divider(),
+                                  Text(
+                                    '${order.currency} ${order.total.toStringAsFixed(2)}',
+                                    style: Theme.of(context).textTheme.titleMedium,
+                                  ),
+                                  if (order.status == 'payment_pending')
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 8),
+                                      child: Text('Payment has not been processed.'),
+                                    ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () => _reorder(order),
+                                        icon: const Icon(Icons.replay),
+                                        label: const Text('Reorder'),
+                                      ),
+                                      if (canCancel && order.paymentStatus != 'pending')
+                                        TextButton.icon(
+                                          onPressed: () => _cancelOrder(order),
+                                          icon: const Icon(Icons.cancel_outlined),
+                                          label: const Text('Cancel'),
+                                        ),
+                                      if (order.status == 'payment_pending' &&
+                                          order.paymentMethod == 'card') ...[
+                                        if (order.paymentStatus == 'pending')
+                                          const Chip(label: Text('Payment in progress'))
+                                        else
+                                          FilledButton.tonal(
+                                            onPressed: _startingPayments.contains(order.id)
+                                                ? null
+                                                : () => _startPayment(order),
+                                            child: Text(_startingPayments.contains(order.id)
+                                                ? 'Starting...'
+                                                : 'Start payment'),
+                                          ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+    );
+  }
+}
+
+class _FeatureChip extends StatelessWidget {
+  final String label;
+
+  const _FeatureChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Text(label),
+      backgroundColor: const Color(0xFFEAFBF4),
+      side: const BorderSide(color: Color(0xFF9FE6C2)),
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  const _ActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: Icon(icon, color: const Color(0xFF0E9F6E)),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: onPressed,
+      ),
+    );
+  }
+}

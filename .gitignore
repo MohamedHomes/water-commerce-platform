@@ -1,0 +1,23 @@
+# Root-level Node and build artifacts
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+coverage/
+**/coverage/
+.env
+.env.*
+!.env.example
+
+# Flutter
+.mobile-plugins
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
