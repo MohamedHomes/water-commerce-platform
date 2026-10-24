@@ -24,12 +24,12 @@ after Sprint 18 is present in the repository plan.
 | Sprint | Objective and provenance | Implemented evidence | Remaining work / gaps | Current evidence and blockers | Status |
 |---|---|---|---|---|---|
 | 0 | Foundation. Documented in `CHANGELOG.md`; structure, health endpoints, app shells, configuration, and Compose baseline. | [README](./README.md), [backend health tests](./backend/test/app.e2e-spec.ts), [Compose configuration](./docker-compose.yml), Flutter and admin application shells. | Compose services and PostgreSQL 16 have not been started and verified in this environment. | Backend build and health tests pass; admin build/lint and Flutter analysis/tests pass. `docker compose config` passes; Docker engine is unreachable. | **Partially Complete** |
-| 1 | Authentication/customer identity. **Inferred**, not specified in an original sprint document. | [Auth service](./backend/src/auth/auth.service.ts), [auth tests](./backend/test/auth.e2e-spec.ts): registration, login, refresh, profile, logout; customer data is database-backed. | Original acceptance scope is unknown. OTP and rate limiting called out in [SECURITY](./SECURITY.md) are not evidenced as implemented. | Current backend build and full suite pass, including authentication and persistence tests. | **Partially Complete** |
+| 1 | Authentication/customer identity. **Inferred**, not specified in an original sprint document. | [Auth service](./backend/src/auth/auth.service.ts), [auth tests](./backend/test/auth.e2e-spec.ts): registration, login, refresh, profile, logout; customer data is database-backed. Migration 018 and [rate-limit tests](./backend/test/auth-rate-limit.e2e-spec.ts) cover shared limits on auth/profile routes. | Original acceptance scope is unknown. OTP remains disabled pending a delivery/recovery product decision. | Backend build and PGlite auth/rate-limit tests pass; production PostgreSQL 16 is not verified. | **Partially Complete** |
 | 2 | Catalog. **Inferred**, not specified in an original sprint document. | [Catalog module](./backend/src/catalog), [catalog/search tests](./backend/test/catalog-search.e2e-spec.ts), migration-backed categories, brands, products, and deterministic seed data. | Original acceptance scope is unknown; product media/object-storage integration is not evidenced. | Current backend build and catalog/search tests pass. | **Partially Complete** |
 | 3 | Search. **Inferred**, not specified in an original sprint document. | [Search module](./backend/src/search), [catalog/search tests](./backend/test/catalog-search.e2e-spec.ts), [search migration](./backend/migrations/003_create_search_indexes.sql). | Original acceptance scope is unknown; no external search provider is configured or claimed. | Current backend build and catalog/search tests pass. | **Partially Complete** |
 | 4 | Cart and server-side pricing. **Inferred**, not specified in an original sprint document. | [Cart module](./backend/src/cart), [cart tests](./backend/test/cart.e2e-spec.ts), checkout pricing and persistence tests in [Sprint 5 tests](./backend/test/sprint5.e2e-spec.ts). | Original acceptance scope is unknown; no separate formal acceptance record exists. | Current backend build and full PGlite-backed suite pass. | **Partially Complete** |
 | 5 | Address management and checkout drafts. **Inferred** from the named [Sprint 5 tests](./backend/test/sprint5.e2e-spec.ts); no original sprint specification is present. | [Address module](./backend/src/address), [checkout module](./backend/src/checkout), customer-isolation, validation, and checkout tests; Flutter address/checkout tests in [mobile/test](./mobile/test). | Original acceptance scope is unknown; production PostgreSQL 16 is not verified. | Current backend build/full suite and Flutter analysis/tests pass; database behavior was tested with PGlite. | **Partially Complete** |
-| 6 | Customer orders. Documented in `CHANGELOG.md`. | [Orders module](./backend/src/orders), [order tests](./backend/test/orders.e2e-spec.ts): checkout conversion/idempotency, ownership, immutable snapshots, cancel/reorder; mobile order history/actions. | No production payment capture in this sprint; handled by the payment domain and still unconfigured. | Current backend build and all 11 suites pass; the full order suite includes delivery/review cases added later. | **Complete** |
+| 6 | Customer orders. Documented in `CHANGELOG.md`. | [Orders module](./backend/src/orders), [order tests](./backend/test/orders.e2e-spec.ts): checkout conversion/idempotency, ownership, immutable snapshots, cancel/reorder; mobile order history/actions. | No production payment capture in this sprint; handled by the payment domain and still unconfigured. | Current backend build and all 12 suites pass; the full order suite includes delivery/review cases added later. | **Complete** |
 | 7 | Provider-neutral payment lifecycle foundation. Documented in `CHANGELOG.md`; production payment credentials/provider were explicitly out of scope. | [Payments module](./backend/src/payments), [payment tests](./backend/test/payments.e2e-spec.ts), migration 009: intent persistence, idempotency, raw-body webhook verification, deduplication, amount/currency checks, state transitions. | A real payment processor, capture/settlement, refunds, and production webhook secrets are not configured. The test adapter does not collect money. | Current backend build/full suite passes, including payment integration tests against PGlite. No live-provider test was performed. | **Complete** |
 | 8 | Inventory reservation baseline. Documented in `CHANGELOG.md`. | [Orders and inventory implementation](./backend/src/orders/orders.service.ts), [order tests](./backend/test/orders.e2e-spec.ts), migration 010: atomic reserve/release, locking, non-negative stock, movement records. | Warehouse-level stock, replenishment, and fulfillment stock transitions remain outside the single product-level pool. | Current backend build/full suite passes, including reservation/cancellation behavior. | **Complete** |
 | 9 | Delivery tracking foundation. Documented in `CHANGELOG.md`. | [Delivery module](./backend/src/delivery), [delivery/order tests](./backend/test/orders.e2e-spec.ts), migration 011, and customer mobile delivery status/event display. | No dispatch provider, driver assignment, location feed, or live ETA is connected. | Current backend suite covers delivery ownership/events/transitions; mobile analysis/tests pass. Provider integration is not configured. | **Complete** |
@@ -38,7 +38,7 @@ after Sprint 18 is present in the repository plan.
 | 12 | Admin operations foundation. Documented in `CHANGELOG.md`. | [Admin module](./backend/src/admin), [admin API/UI](./admin/src/App.tsx), migration 014, [admin tests](./backend/test/admin.e2e-spec.ts): database role checks, dashboard, order queue, promotion controls, audit. | Order queue remains read-only; no payment capture or dispatch-provider operation is exposed. | Backend build/full tests and admin production build/lint pass. Admin provisioning still requires controlled operator action. | **Complete** |
 | 13 | Admin inventory controls. Documented in `CHANGELOG.md`. | [Admin inventory service](./backend/src/admin/admin.service.ts), admin UI, migration 015: locked adjustments, non-negative validation, movement and audit records. | Single product-level pool; no warehouses, supplier replenishment, or stock-count reconciliation. | Current backend admin tests and production build/lint pass. | **Complete** |
 | 14 | Manual delivery operations. Documented in `CHANGELOG.md`. | [Admin delivery operations](./backend/src/admin/admin.service.ts), [delivery/order tests](./backend/test/orders.e2e-spec.ts): sequential transitions, event history, delivered timestamp, audit. | Manual status updates only; no driver/dispatch integration or location tracking. | Current backend full suite and admin build/lint pass. | **Complete** |
-| 15 | Verified-purchase product reviews and moderation. Documented in `CHANGELOG.md`. | [Review service/controller](./backend/src/catalog/product-reviews.service.ts), [review API tests](./backend/test/orders.e2e-spec.ts), [admin moderation](./backend/src/admin/admin.service.ts), migration 016, mobile review submission. Tests cover owner/delivered-order eligibility, rating validation, pending visibility, approval, rejection, and duplicate prevention. | No review reporting/appeals workflow is documented; no moderation SLAs or customer moderation notices are evidenced. | Current backend build and all 11 suites/27 tests pass; Flutter analysis and all 6 tests pass. | **Complete** |
+| 15 | Verified-purchase product reviews and moderation. Documented in `CHANGELOG.md`. | [Review service/controller](./backend/src/catalog/product-reviews.service.ts), [review API tests](./backend/test/orders.e2e-spec.ts), [admin moderation](./backend/src/admin/admin.service.ts), migration 016, mobile review submission. Tests cover owner/delivered-order eligibility, rating validation, pending visibility, approval, rejection, and duplicate prevention. | No review reporting/appeals workflow is documented; no moderation SLAs or customer moderation notices are evidenced. | Current backend build and all 12 suites/29 tests pass; Flutter analysis and all 11 tests pass. | **Complete** |
 | 16 | Admin catalog controls. Documented in `CHANGELOG.md`. | [Admin catalog service](./backend/src/admin/admin.service.ts), admin UI, [admin tests](./backend/test/admin.e2e-spec.ts): listing and audited price/active-state updates. | No bulk import, product media management, or variant operations are evidenced. | Current backend full suite and admin production build/lint pass. | **Complete** |
 | 17 | Deployment hardening foundation. Documented in `CHANGELOG.md`. | [Backend/admin Dockerfiles](./backend/Dockerfile), [Compose configuration](./docker-compose.yml), [production auth/CORS configuration](./backend/src/auth/auth.constants.ts), deployment docs. | Neither Docker images/runtime nor PostgreSQL 16 deployment/readiness/migration behavior has been verified. Production secret injection, backups, monitoring, and operational runbooks still need deployment-specific validation. | Backend build/tests and admin build/lint pass. `docker compose config` passes with an obsolete `version`-field warning, but the Docker engine is unreachable; PostgreSQL 16 is not verified. | **Blocked** |
 | 18 | Android release safety gate. Documented in `CHANGELOG.md`. | [Android Gradle release gate](./mobile/android/app/build.gradle.kts), [HTTPS API configuration](./mobile/lib/api_config.dart), mobile release docs. Installed JDK 17.0.11 and `javac` 17.0.11 are valid; Flutter is configured to use this JDK. | Debug APK and release build remain unverified. Android SDK command-line tools are absent and license status is unknown. The failed build exhausted disk while downloading/extracting NDK 28.2.13676358. Release signing/store credentials and submission remain operator-controlled. | `flutter doctor -v` confirms missing command-line tools and unknown Android licenses. Gradle passed the former Java 11 incompatibility, then `flutter build apk --debug` failed with `There is not enough space on the disk` (exit 1). | **Blocked** |
@@ -138,17 +138,48 @@ layout, while preserving existing API and business behavior.
   English remains LTR.
 - Automated tests verify locale switching/persistence and representative
   translated RTL screens; builds and lint/analyzer checks pass.
-- No API contract or backend business rule changes are made as a side effect.
+- Existing English fields and business rules remain backward compatible.
+  Optional Arabic catalog fields may be added when needed to localize dynamic
+  product/category/brand content and historical customer snapshots.
 
-**Current evidence/gaps:** Both platforms now offer English/Arabic selection,
-persisted language choice, translated first-party labels and actions, and RTL
-behavior. Mobile tests cover persisted locale state and Arabic/LTR direction;
-admin tests cover message interpolation, persistence helpers, and document
-direction. Admin build/lint and Flutter analyzer/tests pass. The sprint remains
-in progress: no exhaustive string-coverage audit or device-level Arabic review
-has been completed, and catalog/customer-generated content does not yet have
-separate bilingual data fields. Android build/runtime verification remains
-environment-blocked as documented above.
+**Current evidence/gaps:** Both platforms offer English/Arabic selection,
+persisted language choice, translated first-party labels/actions, and RTL
+behavior. Automated checks detect missing/duplicate static translation keys
+and verify coverage of literal localization call sites. Migration 017 adds
+nullable Arabic catalog fields without replacing English data; catalog API
+search/list/detail and admin authoring now carry those fields, and cart/order
+snapshots expose an optional Arabic product name. Admin product, category, and
+brand create/edit workflows are guarded, validated, and audited. Product media
+storage remains explicitly unconfigured. Backend build and all 12 suites/29
+tests pass; admin build/lint and 4 localization tests pass; Flutter analysis
+and all 13 tests pass. Manual rendered-screen/accessibility review remains
+outstanding: a browser smoke check verified the admin login screen's Arabic
+copy, RTL document direction, and persistence after reload, but the
+authenticated dashboard/table was not rendered against a running API and
+mobile device/accessibility review remains. Sprint 19 is not marked complete.
+
+## Application security follow-up (unscoped; no sprint number assigned)
+
+**Objective:** Apply database-backed request limits to credential lifecycle
+and profile mutation endpoints without adding an in-memory production fallback
+or inventing an OTP channel.
+
+**Implemented evidence:** Migration 018, the shared fixed-window limiter,
+decorated auth/profile routes, localized 429 messages, and PGlite tests for
+thresholds, expiry/reset, address-key separation, and concurrent counter
+updates. Login, registration, refresh, logout, and profile update limits are documented in
+[`API.md`](./API.md) and [`SECURITY.md`](./SECURITY.md).
+
+**Remaining work:** OTP enrollment/delivery remains blocked on channel and
+recovery decisions. Deployment must configure trusted proxy handling before
+client-address limits can correctly distinguish end users; edge-level limits
+and real PostgreSQL 16 behavior remain deployment checks. This work is not
+counted as a numbered sprint.
+
+The mobile catalog now uses the existing public catalog/search endpoints for
+bilingual browse/search, category filtering, paging, and authenticated cart
+addition. Inactive products are excluded at the API. This work is also
+unscoped and is not counted as a sprint.
 
 See [`CODE_COMPLETION_PLAN.md`](./CODE_COMPLETION_PLAN.md) for the remaining
 application and deferred release work.

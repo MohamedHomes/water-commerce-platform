@@ -14,12 +14,14 @@ import {
     IsNotEmpty,
     IsOptional,
     IsString,
+    Length,
     Matches,
     Max,
     MaxLength,
     Min,
 } from 'class-validator';
 import { QueryResultRow } from 'pg';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 
 export class CreatePromotionDto {
@@ -111,6 +113,173 @@ export class UpdateProductOperationsDto {
     @IsOptional()
     @IsBoolean()
     isActive?: boolean;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(200)
+    name?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(200)
+    nameAr?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @Length(1, 200)
+    @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    slug?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    description?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    descriptionAr?: string;
+
+    @IsOptional()
+    @IsString()
+    @Length(1, 80)
+    categoryId?: string;
+
+    @IsOptional()
+    @IsString()
+    @Length(1, 80)
+    brandId?: string;
+}
+
+export class CreateProductOperationsDto {
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(200)
+    name!: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(200)
+    nameAr?: string;
+
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+    @IsString()
+    @Length(1, 200)
+    @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    slug!: string;
+
+    @IsString()
+    @Length(1, 80)
+    categoryId!: string;
+
+    @IsString()
+    @Length(1, 80)
+    brandId!: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    description?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    descriptionAr?: string;
+
+    @Type(() => Number)
+    @IsNumber()
+    @Min(0.01)
+    @Max(1000000)
+    price!: number;
+
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(0)
+    @Max(1000000)
+    quantity = 0;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(80)
+    packageSize?: string;
+}
+
+export class CatalogTermDto {
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(150)
+    name!: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(150)
+    nameAr?: string;
+
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+    @IsString()
+    @Length(1, 150)
+    @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    slug!: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    description?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    descriptionAr?: string;
+}
+
+export class UpdateCatalogTermDto {
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @IsNotEmpty()
+    @MaxLength(150)
+    name?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(150)
+    nameAr?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+    @IsString()
+    @Length(1, 150)
+    @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    slug?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    description?: string;
+
+    @IsOptional()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+    @IsString()
+    @MaxLength(10000)
+    descriptionAr?: string;
 }
 
 export class AdminOrdersQuery {
@@ -243,6 +412,92 @@ export class AdminService {
         return { items: result.rows };
     }
 
+    async getCatalogTerms() {
+        const [categories, brands] = await Promise.all([
+            this.database.query(
+                `SELECT id, name, name_ar, slug, description, description_ar
+                FROM categories ORDER BY name, id`,
+            ),
+            this.database.query(
+                `SELECT id, name, name_ar, slug, description, description_ar
+                FROM brands ORDER BY name, id`,
+            ),
+        ]);
+        return { categories: categories.rows, brands: brands.rows };
+    }
+
+    async createCatalogTerm(
+        adminId: string,
+        type: 'category' | 'brand',
+        dto: CatalogTermDto,
+    ) {
+        const table = type === 'category' ? 'categories' : 'brands';
+        const id = randomUUID();
+        try {
+            return await this.database.withTransaction(async (client) => {
+                const result = await client.query(
+                    `INSERT INTO ${table} (id, name, name_ar, slug, description, description_ar)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id, name, name_ar, slug, description, description_ar`,
+                    [id, dto.name, dto.nameAr ?? null, dto.slug, dto.description ?? null, dto.descriptionAr ?? null],
+                );
+                await this.writeCatalogAudit(client, adminId, `${type}_created`, type, id, dto);
+                return result.rows[0];
+            });
+        } catch (error) {
+            if (this.isUniqueViolation(error)) {
+                throw new ConflictException(`${type} slug already exists`);
+            }
+            throw error;
+        }
+    }
+
+    async updateCatalogTerm(
+        adminId: string,
+        type: 'category' | 'brand',
+        id: string,
+        dto: UpdateCatalogTermDto,
+    ) {
+        const table = type === 'category' ? 'categories' : 'brands';
+        const fields = [
+            ['name', dto.name],
+            ['name_ar', dto.nameAr],
+            ['slug', dto.slug],
+            ['description', dto.description],
+            ['description_ar', dto.descriptionAr],
+        ] as const;
+        const updates = fields.filter(([, value]) => value !== undefined);
+        if (updates.length === 0) {
+            throw new BadRequestException('At least one catalog field must be updated');
+        }
+        try {
+            return await this.database.withTransaction(async (client) => {
+                const values: unknown[] = [id];
+                const assignments = updates.map(([column, value]) => {
+                    values.push(value);
+                    return `${column} = $${values.length}`;
+                });
+                assignments.push('updated_at = NOW()');
+                const result = await client.query<{ id: string } & QueryResultRow>(
+                    `UPDATE ${table} SET ${assignments.join(', ')}
+                    WHERE id = $1
+                    RETURNING id, name, name_ar, slug, description, description_ar`,
+                    values,
+                );
+                if (!result.rows[0]) {
+                    throw new NotFoundException(`${type} not found`);
+                }
+                await this.writeCatalogAudit(client, adminId, `${type}_updated`, type, id, dto);
+                return result.rows[0];
+            });
+        } catch (error) {
+            if (this.isUniqueViolation(error)) {
+                throw new ConflictException(`${type} slug already exists`);
+            }
+            throw error;
+        }
+    }
+
     async adjustInventory(adminId: string, productId: string, dto: AdjustInventoryDto) {
         if (dto.quantityDelta === 0) {
             throw new BadRequestException('Inventory adjustment must be non-zero');
@@ -364,7 +619,8 @@ export class AdminService {
     async getPendingReviews() {
         const result = await this.database.query(
             `
-                SELECT r.id, r.product_id, p.name AS product_name, r.customer_id,
+                SELECT r.id, r.product_id, p.name AS product_name,
+                    p.name_ar AS product_name_ar, r.customer_id,
                     r.order_id, r.rating, r.comment, r.created_at
                 FROM product_reviews r
                 JOIN products p ON p.id = r.product_id
@@ -405,8 +661,11 @@ export class AdminService {
     async getProducts() {
         const result = await this.database.query(
             `
-                SELECT p.id, p.name, p.price, p.quantity, p.availability, p.is_active,
-                    c.name AS category_name, b.name AS brand_name
+                SELECT p.id, p.name, p.name_ar, p.slug, p.description,
+                    p.description_ar, p.price, p.quantity, p.availability, p.is_active,
+                    p.category_id, p.brand_id,
+                    c.name AS category_name, c.name_ar AS category_name_ar,
+                    b.name AS brand_name, b.name_ar AS brand_name_ar
                 FROM products p
                 JOIN categories c ON c.id = p.category_id
                 JOIN brands b ON b.id = p.brand_id
@@ -424,38 +683,110 @@ export class AdminService {
     }
 
     async updateProduct(adminId: string, productId: string, dto: UpdateProductOperationsDto) {
-        if (dto.price === undefined && dto.isActive === undefined) {
+        const fields = [
+            ['price', dto.price],
+            ['is_active', dto.isActive],
+            ['name', dto.name],
+            ['name_ar', dto.nameAr],
+            ['slug', dto.slug],
+            ['description', dto.description],
+            ['description_ar', dto.descriptionAr],
+            ['category_id', dto.categoryId],
+            ['brand_id', dto.brandId],
+        ] as const;
+        const updates = fields.filter(([, value]) => value !== undefined);
+        if (updates.length === 0) {
             throw new BadRequestException('At least one product field must be updated');
         }
-        return this.database.withTransaction(async (client) => {
-            const result = await client.query(
-                `
-                    UPDATE products
-                    SET price = COALESCE($2, price),
-                        is_active = COALESCE($3, is_active),
-                        updated_at = NOW()
-                    WHERE id = $1
-                    RETURNING id, name, price, quantity, availability, is_active
-                `,
-                [productId, dto.price ?? null, dto.isActive ?? null],
-            );
-            if (!result.rows[0]) {
-                throw new NotFoundException('Product not found');
+        try {
+            return await this.database.withTransaction(async (client) => {
+                if (dto.categoryId) await this.ensureCatalogTerm(client, 'categories', dto.categoryId);
+                if (dto.brandId) await this.ensureCatalogTerm(client, 'brands', dto.brandId);
+                const values: unknown[] = [productId];
+                const assignments = updates.map(([column, value]) => {
+                    values.push(value);
+                    return `${column} = $${values.length}`;
+                });
+                assignments.push('updated_at = NOW()');
+                const result = await client.query(
+                    `
+                        UPDATE products
+                        SET ${assignments.join(', ')}
+                        WHERE id = $1
+                        RETURNING id, name, name_ar, slug, description, description_ar,
+                            price, quantity, availability, is_active, category_id, brand_id
+                    `,
+                    values,
+                );
+                if (!result.rows[0]) {
+                    throw new NotFoundException('Product not found');
+                }
+                await client.query(
+                    `
+                        INSERT INTO admin_audit_logs (
+                            admin_customer_id, action, resource_type, resource_id, metadata
+                        ) VALUES ($1, 'product_updated', 'product', NULL, $2::jsonb)
+                    `,
+                    [adminId, JSON.stringify({ productId, ...dto })],
+                );
+                return {
+                    ...result.rows[0],
+                    price: Number(result.rows[0].price),
+                    quantity: Number(result.rows[0].quantity),
+                };
+            });
+        } catch (error) {
+            if (this.isUniqueViolation(error)) {
+                throw new ConflictException('Product slug already exists');
             }
-            await client.query(
-                `
-                    INSERT INTO admin_audit_logs (
-                        admin_customer_id, action, resource_type, resource_id, metadata
-                    ) VALUES ($1, 'product_updated', 'product', NULL, $2::jsonb)
-                `,
-                [adminId, JSON.stringify({ productId, price: dto.price, isActive: dto.isActive })],
-            );
-            return {
-                ...result.rows[0],
-                price: Number(result.rows[0].price),
-                quantity: Number(result.rows[0].quantity),
-            };
-        });
+            throw error;
+        }
+    }
+
+    async createProduct(adminId: string, dto: CreateProductOperationsDto) {
+        try {
+            return await this.database.withTransaction(async (client) => {
+                await this.ensureCatalogTerm(client, 'categories', dto.categoryId);
+                await this.ensureCatalogTerm(client, 'brands', dto.brandId);
+                const result = await client.query<{
+                    id: string;
+                    price: string | number;
+                    quantity: string | number;
+                } & QueryResultRow>(
+                    `INSERT INTO products (
+                        id, name, name_ar, slug, category_id, brand_id, description,
+                        description_ar, price, availability, package_size, quantity, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                        CASE WHEN $11 = 0 THEN 'out_of_stock' ELSE 'in_stock' END,
+                        $10, $11, NOW())
+                    RETURNING id, name, name_ar, slug, category_id, brand_id, description,
+                        description_ar, price, quantity, availability, is_active`,
+                    [
+                        randomUUID(), dto.name, dto.nameAr ?? null, dto.slug,
+                        dto.categoryId, dto.brandId, dto.description ?? null,
+                        dto.descriptionAr ?? null, dto.price, dto.packageSize ?? null, dto.quantity,
+                    ],
+                );
+                await this.writeCatalogAudit(
+                    client,
+                    adminId,
+                    'product_created',
+                    'product',
+                    result.rows[0].id,
+                    dto,
+                );
+                return {
+                    ...result.rows[0],
+                    price: Number(result.rows[0].price),
+                    quantity: Number(result.rows[0].quantity),
+                };
+            });
+        } catch (error) {
+            if (this.isUniqueViolation(error)) {
+                throw new ConflictException('Product slug already exists');
+            }
+            throw error;
+        }
     }
 
     async createPromotion(adminId: string, dto: CreatePromotionDto) {
@@ -530,5 +861,35 @@ export class AdminService {
     private isUniqueViolation(error: unknown) {
         return typeof error === 'object' && error !== null
             && 'code' in error && error.code === '23505';
+    }
+
+    private async ensureCatalogTerm(
+        executor: { query: (sql: string, values?: unknown[]) => Promise<{ rows: unknown[] }> },
+        table: 'categories' | 'brands',
+        id: string,
+    ) {
+        const result = await executor.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
+        if (!result.rows.length) {
+            throw new BadRequestException(`${table === 'categories' ? 'Category' : 'Brand'} not found`);
+        }
+    }
+
+    private async writeCatalogAudit(
+        executor: { query: (sql: string, values?: unknown[]) => Promise<unknown> },
+        adminId: string,
+        action: string,
+        resourceType: string,
+        resourceId: string,
+        metadata: unknown,
+    ) {
+        const auditMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? { resourceId, ...metadata }
+            : { resourceId, value: metadata };
+        await executor.query(
+            `INSERT INTO admin_audit_logs (
+                admin_customer_id, action, resource_type, resource_id, metadata
+            ) VALUES ($1, $2, $3, NULL, $4::jsonb)`,
+            [adminId, action, resourceType, JSON.stringify(auditMetadata)],
+        );
     }
 }

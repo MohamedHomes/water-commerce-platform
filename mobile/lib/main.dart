@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import 'api_config.dart';
 import 'cart_screen.dart';
+import 'catalog_screen.dart';
 import 'localization.dart';
 
 void main() {
@@ -115,6 +116,7 @@ class OrderLine {
   const OrderLine({
     required this.productId,
     required this.name,
+    this.nameAr,
     required this.quantity,
     required this.unitPrice,
     required this.lineTotal,
@@ -122,6 +124,7 @@ class OrderLine {
 
   final String productId;
   final String name;
+  final String? nameAr;
   final int quantity;
   final double unitPrice;
   final double lineTotal;
@@ -130,6 +133,7 @@ class OrderLine {
     return OrderLine(
       productId: json['productId']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Product',
+      nameAr: json['nameAr']?.toString(),
       quantity: (json['quantity'] as num?)?.toInt() ?? 0,
       unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
       lineTotal: (json['lineTotal'] as num?)?.toDouble() ?? 0,
@@ -616,6 +620,10 @@ final appRouter = GoRouter(
       builder: (_, __) => const CartScreen(),
     ),
     GoRoute(
+      path: '/catalog',
+      builder: (_, __) => const CatalogScreen(),
+    ),
+    GoRoute(
       path: '/addresses',
       builder: (_, __) => const AddressListScreen(),
     ),
@@ -687,7 +695,7 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -708,6 +716,13 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 24),
+            _ActionCard(
+              icon: Icons.water_drop_outlined,
+              title: localized(context, 'Catalog'),
+              subtitle: localized(context, 'Browse and add products to your cart'),
+              onPressed: () => context.go('/catalog'),
+            ),
+            const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.location_on_outlined,
               title: localized(context, 'Addresses'),
@@ -1663,7 +1678,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   const SizedBox(height: 8),
                                   ...order.items.map((item) => Padding(
                                         padding: const EdgeInsets.symmetric(vertical: 2),
-                                        child: Text('${item.quantity} × ${item.name}'),
+                                        child: Text(
+                                          '${item.quantity} × ${Localizations.localeOf(context).languageCode == 'ar' && item.nameAr?.isNotEmpty == true ? item.nameAr : item.name}',
+                                        ),
                                       )),
                                   const Divider(),
                                   Text(

@@ -188,6 +188,21 @@ th {
     margin: 18px 0 24px;
 }
 
+.catalog-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: end;
+    gap: 12px;
+    margin: 18px 0 24px;
+}
+
+.catalog-management-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    margin: 24px 0;
+}
+
 .inline-form {
     display: flex;
     align-items: center;
@@ -199,7 +214,8 @@ th {
 }
 
 @media (max-width: 720px) {
-    .promotion-form {
+    .promotion-form,
+    .catalog-form {
         grid-template-columns: 1fr;
     }
 }

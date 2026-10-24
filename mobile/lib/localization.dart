@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -7,6 +8,16 @@ const _translations = <String, String>{
   'Home': 'المنزل',
   'Customer': 'العميل',
   'Product': 'المنتج',
+  'Catalog': 'الكتالوج',
+  'Browse and add products to your cart': 'تصفح المنتجات وأضفها إلى سلتك',
+  'Search products': 'ابحث عن المنتجات',
+  'No products found.': 'لم يتم العثور على منتجات.',
+  'Add to cart': 'أضف إلى السلة',
+  'Added to cart.': 'تمت إضافة المنتج إلى السلة.',
+  'Loading catalog...': 'جارٍ تحميل الكتالوج…',
+  'All categories': 'جميع الفئات',
+  'Load more': 'تحميل المزيد',
+  'Could not load catalog.': 'تعذر تحميل الكتالوج.',
   'Fresh water, delivered with care': 'مياه نقية تصلك بعناية',
   'Bottled Water': 'مياه معبأة',
   'Bulk Packs': 'عبوات كبيرة',
@@ -34,6 +45,7 @@ const _translations = <String, String>{
   'Enter a valid email': 'أدخل بريداً إلكترونياً صحيحاً',
   'Password must be at least 8 characters': 'يجب ألا تقل كلمة المرور عن 8 أحرف',
   'Retry': 'إعادة المحاولة',
+  'Too many requests': 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً.',
   'No addresses yet. Add your first delivery address.': 'لا توجد عناوين بعد. أضف عنوان التوصيل الأول.',
   'Edit': 'تعديل',
   'Set default': 'تعيين كافتراضي',
@@ -141,6 +153,13 @@ const _translations = <String, String>{
   'Delivery is not available for this order': 'معلومات التوصيل غير متاحة لهذا الطلب',
   'Notification not found': 'الإشعار غير موجود',
   'Unable to load cart': 'تعذر تحميل السلة',
+  'Something went wrong. Please try again.': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
+  'Unable to load this information. Please try again.': 'تعذر تحميل هذه المعلومات. يرجى المحاولة مرة أخرى.',
+  'A product could not be found.': 'تعذر العثور على المنتج.',
+  'The requested item is no longer available.': 'العنصر المطلوب لم يعد متاحاً.',
+  'This action is not available right now.': 'هذا الإجراء غير متاح حالياً.',
+  'Your session has expired. Please sign in again.': 'انتهت جلستك. يرجى تسجيل الدخول مجدداً.',
+  'Please check the information and try again.': 'يرجى مراجعة المعلومات والمحاولة مرة أخرى.',
 };
 
 const _arabicStatuses = <String, String>{
@@ -197,11 +216,51 @@ String localizedStatus(BuildContext context, String status) {
 }
 
 String localizedError(BuildContext context, Object error) {
-  final message = error.toString().replaceFirst(
-        RegExp(r'^(Exception|StateError):\s*'),
-        '',
-      );
-  return localized(context, message);
+  Object? payload;
+  if (error is DioException) {
+    payload = error.response?.data;
+  } else {
+    final message = error.toString().replaceFirst(
+          RegExp(r'^(Exception|StateError):\s*'),
+          '',
+        );
+    return _knownError(context, message);
+  }
+  if (payload is Map<String, dynamic>) {
+    final message = payload['message'];
+    if (message is String) return _knownError(context, message);
+    if (message is List) {
+      final known = message.whereType<String>().map((item) => _knownError(context, item)).toList();
+      if (known.isNotEmpty) return known.join('\n');
+    }
+  }
+  return localized(context, 'Something went wrong. Please try again.');
+}
+
+String _knownError(BuildContext context, String message) {
+  const known = {
+    'Invalid email or password',
+    'Customer with this email already exists',
+    'Email, password, first name, and last name are required',
+    'Checkout session not found',
+    'Delivery is not available for this order',
+    'Notification not found',
+    'Sign in is required to view your cart.',
+    'Sign in is required to update your cart.',
+    'Sign in is required to manage addresses or checkout.',
+    'Could not update the default address.',
+    'Could not delete the address.',
+    'Unable to load cart',
+    'Too many requests',
+  };
+  if (known.contains(message)) return localized(context, message);
+  if (message.contains('Product not found')) {
+    return localized(context, 'A product could not be found.');
+  }
+  if (message.contains('not found') || message.contains('no longer available')) {
+    return localized(context, 'The requested item is no longer available.');
+  }
+  return localized(context, 'Please check the information and try again.');
 }
 
 final appLocaleProvider = StateNotifierProvider<AppLocaleController, Locale>(

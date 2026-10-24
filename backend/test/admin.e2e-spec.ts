@@ -159,6 +159,84 @@ describe('Admin operations', () => {
             .expect(200);
         expect(productUpdate.body).toMatchObject({ id: 'prod-1', price: 5.75, is_active: false });
 
+        const category = await request(app.getHttpServer())
+            .post('/api/v1/admin/categories')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ name: 'Test category', nameAr: 'فئة اختبار', slug: 'test-category' })
+            .expect(201);
+        const brand = await request(app.getHttpServer())
+            .post('/api/v1/admin/brands')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ name: 'Test brand', nameAr: 'علامة اختبار', slug: 'test-brand' })
+            .expect(201);
+        const managedProduct = await request(app.getHttpServer())
+            .post('/api/v1/admin/products')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                name: 'Managed product',
+                nameAr: 'منتج مُدار',
+                slug: 'managed-product',
+                categoryId: category.body.id,
+                brandId: brand.body.id,
+                description: 'Created from the admin API',
+                descriptionAr: 'أُنشئ من واجهة الإدارة',
+                price: 12.5,
+                quantity: 8,
+                packageSize: '2L',
+            })
+            .expect(201);
+        expect(managedProduct.body).toMatchObject({
+            name: 'Managed product',
+            name_ar: 'منتج مُدار',
+            category_id: category.body.id,
+            brand_id: brand.body.id,
+            quantity: 8,
+        });
+        const editedCategory = await request(app.getHttpServer())
+            .patch(`/api/v1/admin/categories/${category.body.id}`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ nameAr: 'فئة محدثة' })
+            .expect(200);
+        expect(editedCategory.body.name_ar).toBe('فئة محدثة');
+        const editedProduct = await request(app.getHttpServer())
+            .patch(`/api/v1/admin/products/${managedProduct.body.id}`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ categoryId: 'cat-water', nameAr: 'اسم محدث' })
+            .expect(200);
+        expect(editedProduct.body).toMatchObject({
+            category_id: 'cat-water',
+            name_ar: 'اسم محدث',
+        });
+        await request(app.getHttpServer())
+            .patch(`/api/v1/admin/products/${managedProduct.body.id}`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ slug: 'aquaflow-15l-mineral-water' })
+            .expect(409);
+        const zeroStockProduct = await request(app.getHttpServer())
+            .post('/api/v1/admin/products')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                name: 'Zero stock product',
+                slug: 'zero-stock-product',
+                categoryId: 'cat-water',
+                brandId: 'brand-aquaflow',
+                price: 3,
+                quantity: 0,
+            })
+            .expect(201);
+        expect(zeroStockProduct.body.availability).toBe('out_of_stock');
+        await request(app.getHttpServer())
+            .post('/api/v1/admin/products')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+                name: 'Duplicate slug',
+                slug: 'managed-product',
+                categoryId: 'cat-water',
+                brandId: 'brand-aquaflow',
+                price: 3,
+            })
+            .expect(409);
+
         await database.query(
             "UPDATE customers SET role = 'customer' WHERE id = $1",
             [account.id],

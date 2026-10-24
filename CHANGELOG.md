@@ -221,18 +221,56 @@
   Flutter's RTL localization delegates
 - translated mobile authentication/address/checkout/cart/order/review/payment/
   delivery/notification labels, validation, known status values, and the
-  platform's current in-app notification/event text; verified all 103 literal
-  `localized(...)` call keys have Arabic entries
+  platform's current in-app notification/event text; added an automated
+  localization call-site/key uniqueness check
 - added mobile tests for saved-language restoration, language updates, Arabic
   translation, and RTL/LTR direction; added admin localization/persistence/
-  direction/error-format unit tests
-- no backend API, database schema, or business behavior changed; product and
-  customer-provided names/content are not yet bilingual data, and unknown
-  server-provided messages remain in their source language
-- current validation: backend build passed; all 11 backend suites and 27 tests
-  passed; admin build and lint passed; 3 admin localization tests passed;
-  Flutter analysis passed and all 9 mobile tests passed
-- Sprint 19 remains incomplete pending bilingual catalog data/content review,
-  exhaustive dynamic/API error coverage, and Arabic/RTL device/accessibility
-  review. Android SDK/build and deployed PostgreSQL 16/Docker checks remain
-  deferred/unverified.
+  direction/error-format tests; admin checks duplicate keys, key parity, and
+  typed UI references
+- added migration 017 with nullable Arabic names/descriptions for categories,
+  brands, and products; existing English data is preserved and deterministic
+  seed records receive Arabic copy
+- catalog APIs search and return bilingual content; cart/order snapshots carry
+  optional Arabic product names for locale-aware customer display
+- added guarded admin APIs and dashboard forms for validated product create/edit
+  and category/brand create/edit, with audit records, slug conflict handling,
+  referential checks, and stock-derived initial availability
+- product media upload remains disabled and explicitly unconfigured; no
+  external storage integration or arbitrary image URL flow was introduced
+- regenerated `infrastructure/database/full_database_setup.sql`; a second
+  generation produced the same SHA-256
+- current validation: backend build passed; all 12 backend suites and 29 tests
+  passed (including PGlite snapshot/migration parity and catalog management);
+  admin build/lint passed and all 4 localization tests passed; Flutter analysis
+  passed and all 13 mobile tests passed
+- Sprint 19 remains incomplete pending rendered-screen/accessibility review.
+  PGlite is not real PostgreSQL 16 verification; Docker and production service
+  onboarding remain deferred.
+
+### Application security follow-up (unscoped; no sprint number assigned)
+
+- added migration 018 and a PostgreSQL-backed fixed-window limiter for login,
+  registration, refresh, logout, and profile updates; limits are shared across
+  backend instances and limiter storage errors fail closed
+- the database stores a SHA-256 digest of scope/address rather than a plain
+  client address; expired records are pruned during limiter requests
+- 429 responses include `Retry-After`; admin and mobile known-error catalogs
+  translate the rate-limit message
+- added PGlite coverage for threshold enforcement, retry metadata, hashed keys,
+  expiry/reset, address-key separation, and concurrent updates; backend build
+  and all 12 suites/29 tests pass. OTP remains disabled pending a channel/
+  recovery decision, and proxy-aware deployment configuration is still required.
+
+### Application catalog follow-up (unscoped; no sprint number assigned)
+
+- connected the Flutter app to the existing catalog API with bilingual product
+  names/descriptions, search, category filtering, paging, stock states, and
+  authenticated add-to-cart actions
+- inactive products are omitted from public list and detail responses; catalog
+  tests verify visibility and the mobile model test verifies Arabic selection
+  and English fallback for legacy records
+- no media integration is implied; product imagery remains unavailable until
+  a storage adapter is configured and tested
+- validation after this work: backend build and all 12 suites/29 tests pass;
+  admin build/lint and all 4 localization tests pass; Flutter analyze passes
+  and all 13 mobile tests pass

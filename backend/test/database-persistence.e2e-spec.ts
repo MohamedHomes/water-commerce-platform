@@ -27,7 +27,7 @@ describe('PostgreSQL persistence integration (PGlite)', () => {
         const applied = await database.query<{ count: string }>(
             'SELECT COUNT(*)::text AS count FROM schema_migrations',
         );
-        expect(Number(applied.rows[0].count)).toBe(16);
+        expect(Number(applied.rows[0].count)).toBe(18);
 
         const registration = await request(app.getHttpServer())
             .post('/api/v1/auth/register')

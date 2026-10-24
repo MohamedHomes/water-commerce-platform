@@ -691,6 +691,71 @@ CREATE INDEX IF NOT EXISTS idx_product_reviews_moderation
     ON product_reviews(status, created_at DESC);
 -- END 016_create_product_reviews.sql
 
+-- BEGIN 017_add_catalog_localizations.sql
+ALTER TABLE categories
+    ADD COLUMN IF NOT EXISTS name_ar VARCHAR(150),
+    ADD COLUMN IF NOT EXISTS description_ar TEXT;
+
+ALTER TABLE brands
+    ADD COLUMN IF NOT EXISTS name_ar VARCHAR(150),
+    ADD COLUMN IF NOT EXISTS description_ar TEXT;
+
+ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS name_ar VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS description_ar TEXT;
+
+UPDATE categories
+SET name_ar = CASE id
+        WHEN 'cat-water' THEN 'مياه معبأة'
+        WHEN 'cat-boxes' THEN 'عبوات مياه'
+        WHEN 'cat-bulk' THEN 'توريد بالجملة'
+        ELSE name_ar
+    END,
+    description_ar = CASE id
+        WHEN 'cat-water' THEN 'مياه عادية وفوارة'
+        WHEN 'cat-boxes' THEN 'عبوات مياه جاهزة للشرب'
+        WHEN 'cat-bulk' THEN 'توريد كميات كبيرة للمنازل والمنشآت'
+        ELSE description_ar
+    END
+WHERE id IN ('cat-water', 'cat-boxes', 'cat-bulk');
+
+UPDATE brands
+SET name_ar = CASE id
+        WHEN 'brand-aquaflow' THEN 'أكوافلو'
+        WHEN 'brand-nature' THEN 'نيتشر سبرينغ'
+        WHEN 'brand-pure' THEN 'بيور دروب'
+        ELSE name_ar
+    END
+WHERE id IN ('brand-aquaflow', 'brand-nature', 'brand-pure');
+
+UPDATE products
+SET name_ar = CASE id
+        WHEN 'prod-1' THEN 'مياه أكوافلو المعدنية ١٫٥ لتر'
+        WHEN 'prod-2' THEN 'عبوة بيور دروب العائلية'
+        WHEN 'prod-3' THEN 'مياه نيتشر سبرينغ ٣٣٠ مل'
+        ELSE name_ar
+    END,
+    description_ar = CASE id
+        WHEN 'prod-1' THEN 'مياه معدنية منعشة لترطيب يومي.'
+        WHEN 'prod-2' THEN 'مياه عالية الجودة للمنازل والتوصيل الدوري.'
+        WHEN 'prod-3' THEN 'مياه فوارة خفيفة وسهلة الشرب.'
+        ELSE description_ar
+    END
+WHERE id IN ('prod-1', 'prod-2', 'prod-3');
+-- END 017_add_catalog_localizations.sql
+
+-- BEGIN 018_add_persistent_rate_limits.sql
+CREATE TABLE IF NOT EXISTS application_rate_limits (
+    key_hash CHAR(64) PRIMARY KEY,
+    window_started_at TIMESTAMPTZ NOT NULL,
+    hit_count INTEGER NOT NULL CHECK (hit_count > 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_rate_limits_updated_at
+    ON application_rate_limits(updated_at);
+-- END 018_add_persistent_rate_limits.sql
+
 -- Match the ledger schema maintained by backend/src/database/migration-runner.ts.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(32) NOT NULL PRIMARY KEY,
@@ -714,5 +779,7 @@ INSERT INTO schema_migrations (version, filename, checksum) VALUES
     ('013', '013_create_promotions.sql', '0842ecf091c84bdabb485d3463e908b9a14675bcff05f6a120cc33448333c398'),
     ('014', '014_add_customer_roles_and_admin_audit.sql', 'db8339e34a0dac53582c9cdd2094927a0ebf62fd56bee69ee9848377b9fc3d18'),
     ('015', '015_add_admin_inventory_adjustments.sql', '8df2943022388867610e319b80f919556524d93da8e77683f1b1bd2b71cd66fb'),
-    ('016', '016_create_product_reviews.sql', 'b31bd3ff83fb20ba2e6de4f184ab71e14e9fc694f6739df35d17f653306066b7');
+    ('016', '016_create_product_reviews.sql', 'b31bd3ff83fb20ba2e6de4f184ab71e14e9fc694f6739df35d17f653306066b7'),
+    ('017', '017_add_catalog_localizations.sql', 'd727d7bd17954069aacafcb6c92e5ff80d2c23a91543c7c7406851ff7e99356f'),
+    ('018', '018_add_persistent_rate_limits.sql', '44e83b935c43d450bf64866e99961a308e6e97954392cf636b363717b24ff4fc');
 COMMIT;

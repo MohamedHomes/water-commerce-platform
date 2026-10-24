@@ -39,10 +39,18 @@ Customers can submit product reviews only for delivered purchases. Reviews
 remain hidden until administrator moderation.
 
 English/Arabic localization is in progress across the mobile client and admin
-portal. The admin dashboard now has persisted language selection and RTL
-layout; the mobile app has persisted language selection, translated customer
-copy, and Arabic RTL. See `ROADMAP.md` for remaining localization acceptance
-work and `CODE_COMPLETION_PLAN.md` for the application completion queue.
+portal. Both clients persist language selection and apply Arabic RTL; catalog
+records and customer cart/order snapshots now support optional Arabic names and
+descriptions. The mobile app supports catalog browsing, search, category
+filtering, and adding available products to the cart. Admin
+product/category/brand CRUD is audited and validated.
+Product media upload remains unavailable because no storage adapter is
+configured. See `ROADMAP.md` for remaining localization acceptance work and
+`CODE_COMPLETION_PLAN.md` for the application completion queue.
+
+The backend also applies shared PostgreSQL-backed request limits to login,
+registration, token refresh/logout, and profile updates. OTP remains disabled
+pending a channel and recovery-policy decision.
 
 Backend and admin containers have production-oriented build stages, but Docker
 runtime and PostgreSQL 16 deployment verification have not been run in this

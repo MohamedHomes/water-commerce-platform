@@ -45,6 +45,7 @@ describe('Cart and pricing', () => {
 
         expect(addResponse.body.items).toHaveLength(1);
         expect(addResponse.body.items[0].productId).toBe('prod-1');
+        expect(addResponse.body.items[0].nameAr).toEqual(expect.any(String));
         expect(addResponse.body.items[0].quantity).toBe(2);
         expect(addResponse.body.summary.subtotal).toBe(11);
         expect(addResponse.body.summary.discount).toBe(2);

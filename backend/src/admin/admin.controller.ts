@@ -16,10 +16,13 @@ import {
     AdjustInventoryDto,
     AdminOrdersQuery,
     AdminService,
+    CatalogTermDto,
     CreatePromotionDto,
+    CreateProductOperationsDto,
     DeliveryStatusUpdateDto,
     ModerateReviewDto,
     SetPromotionActiveDto,
+    UpdateCatalogTermDto,
     UpdateProductOperationsDto,
 } from './admin.service';
 
@@ -88,6 +91,47 @@ export class AdminController {
     @Get('products')
     getProducts() {
         return this.adminService.getProducts();
+    }
+
+    @Get('catalog-terms')
+    getCatalogTerms() {
+        return this.adminService.getCatalogTerms();
+    }
+
+    @Post('categories')
+    createCategory(@CurrentUser() user: { id: string }, @Body() dto: CatalogTermDto) {
+        return this.adminService.createCatalogTerm(user.id, 'category', dto);
+    }
+
+    @Patch('categories/:id')
+    updateCategory(
+        @CurrentUser() user: { id: string },
+        @Param('id') id: string,
+        @Body() dto: UpdateCatalogTermDto,
+    ) {
+        return this.adminService.updateCatalogTerm(user.id, 'category', id, dto);
+    }
+
+    @Post('brands')
+    createBrand(@CurrentUser() user: { id: string }, @Body() dto: CatalogTermDto) {
+        return this.adminService.createCatalogTerm(user.id, 'brand', dto);
+    }
+
+    @Patch('brands/:id')
+    updateBrand(
+        @CurrentUser() user: { id: string },
+        @Param('id') id: string,
+        @Body() dto: UpdateCatalogTermDto,
+    ) {
+        return this.adminService.updateCatalogTerm(user.id, 'brand', id, dto);
+    }
+
+    @Post('products')
+    createProduct(
+        @CurrentUser() user: { id: string },
+        @Body() dto: CreateProductOperationsDto,
+    ) {
+        return this.adminService.createProduct(user.id, dto);
     }
 
     @Patch('products/:id')

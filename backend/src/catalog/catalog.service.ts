@@ -9,15 +9,19 @@ import { SEED_BRAND_IDS, SEED_CATEGORY_IDS } from '../database/seed.constants';
 export interface CategoryRecord {
     id: string;
     name: string;
+    nameAr?: string;
     slug: string;
     description?: string;
+    descriptionAr?: string;
 }
 
 export interface BrandRecord {
     id: string;
     name: string;
+    nameAr?: string;
     slug: string;
     description?: string;
+    descriptionAr?: string;
 }
 
 export interface ProductVariantRecord {
@@ -41,6 +45,8 @@ export interface ProductRecord {
     name: string;
     slug: string;
     description: string;
+    nameAr?: string;
+    descriptionAr?: string;
     categoryId: string;
     brandId: string;
     price: number;
@@ -94,6 +100,8 @@ interface CatalogProductRow extends QueryResultRow {
     name: string;
     slug: string;
     description: string | null;
+    name_ar: string | null;
+    description_ar: string | null;
     category_id: string;
     brand_id: string;
     price: string | number;
@@ -131,7 +139,8 @@ export class CatalogService {
     async getCategories() {
         const result = await this.database.query<CategoryRecord>(
             `
-                SELECT id, name, slug, description
+                SELECT id, name, name_ar AS "nameAr", slug, description,
+                    description_ar AS "descriptionAr"
                 FROM categories
                 ORDER BY CASE id
                     WHEN 'cat-water' THEN 1
@@ -146,7 +155,8 @@ export class CatalogService {
 
     async getBrands() {
         const result = await this.database.query<BrandRecord>(
-            'SELECT id, name, slug, description FROM brands ORDER BY name, id',
+            `SELECT id, name, name_ar AS "nameAr", slug, description,
+                description_ar AS "descriptionAr" FROM brands ORDER BY name, id`,
         );
         return { items: result.rows, total: result.rowCount ?? result.rows.length };
     }
@@ -168,7 +178,9 @@ export class CatalogService {
                     FROM products p
                     WHERE ($1::text IS NULL OR
                         p.name ILIKE '%' || $1 || '%' OR
+                        COALESCE(p.name_ar, '') ILIKE '%' || $1 || '%' OR
                         COALESCE(p.description, '') ILIKE '%' || $1 || '%' OR
+                        COALESCE(p.description_ar, '') ILIKE '%' || $1 || '%' OR
                         p.id ILIKE '%' || $1 || '%' OR
                         p.category_id ILIKE '%' || $1 || '%' OR
                         p.brand_id ILIKE '%' || $1 || '%' OR
@@ -179,15 +191,18 @@ export class CatalogService {
                         ) OR EXISTS (
                             SELECT 1 FROM categories search_category
                             WHERE search_category.id = p.category_id
-                              AND search_category.name ILIKE '%' || $1 || '%'
+                              AND (search_category.name ILIKE '%' || $1 || '%'
+                                OR COALESCE(search_category.name_ar, '') ILIKE '%' || $1 || '%')
                         ) OR EXISTS (
                             SELECT 1 FROM brands search_brand
                             WHERE search_brand.id = p.brand_id
-                              AND search_brand.name ILIKE '%' || $1 || '%'
+                              AND (search_brand.name ILIKE '%' || $1 || '%'
+                                OR COALESCE(search_brand.name_ar, '') ILIKE '%' || $1 || '%')
                         )
                     )
                     AND ($2::text IS NULL OR p.category_id = $2)
                     AND ($3::text IS NULL OR p.brand_id = $3)
+                    AND p.is_active = TRUE
                     ORDER BY ${orderBy}
                     LIMIT $4 OFFSET $5
                 )
@@ -228,7 +243,7 @@ export class CatalogService {
                     v.is_available AS variant_is_available
                 FROM products p
                 LEFT JOIN product_variants v ON v.product_id = p.id
-                WHERE p.id = $1
+                WHERE p.id = $1 AND p.is_active = TRUE
                 ORDER BY v.id
             `,
             [id],
@@ -246,20 +261,23 @@ export class CatalogService {
             await client.query(
                 `
                     INSERT INTO products (
-                        id, name, slug, category_id, brand_id, description, price,
+                        id, name, name_ar, slug, category_id, brand_id, description,
+                        description_ar, price,
                         compare_at_price, discount_percent, availability, image_url,
                         package_size, quantity, volume, weight, dimensions, is_active,
                         created_at, updated_at
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                        $12, $13, $14, $15, $16, $17, $18, $18
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                        $13, $14, $15, $16, $17, $18, $19, $20, $20
                     )
                 `,
                 [
-                    id, input.name ?? 'New Product', input.slug ?? `new-product-${id}`,
+                    id, input.name ?? 'New Product', input.nameAr ?? null,
+                    input.slug ?? `new-product-${id}`,
                     input.categoryId ?? SEED_CATEGORY_IDS.water,
                     input.brandId ?? SEED_BRAND_IDS.aquaflow,
-                    input.description ?? 'New product', input.price ?? 0,
+                    input.description ?? 'New product', input.descriptionAr ?? null,
+                    input.price ?? 0,
                     input.compareAtPrice ?? null, input.discountPercent ?? null,
                     input.availability ?? 'in_stock', input.imageUrl ?? null,
                     input.packageSize ?? '1L', input.quantity ?? 0, input.volume ?? '1L',
@@ -303,6 +321,8 @@ export class CatalogService {
                     name: row.name,
                     slug: row.slug,
                     description: row.description ?? '',
+                    nameAr: row.name_ar ?? undefined,
+                    descriptionAr: row.description_ar ?? undefined,
                     categoryId: row.category_id,
                     brandId: row.brand_id,
                     price: Number(row.price),

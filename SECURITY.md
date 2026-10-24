@@ -8,6 +8,9 @@
 - password hashing and verification where applicable
 - OTP protection for sensitive workflows
 - rate limiting and input validation
+- PostgreSQL-backed rate limits for authentication and profile mutations;
+  counters are shared across backend instances and no in-memory fallback is
+  used
 - authorization and role-based permission checks via domain policy layers
 - administrative endpoints verify the current database role, and public
   registration cannot assign administrative privileges
@@ -46,3 +49,14 @@ registration; do not add role selection to public registration.
 Development-only JWT defaults are rejected in production. Configure
 `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `CORS_ORIGINS` through deployment secret
 and environment management before starting a production process.
+
+Login is limited to 10 attempts per client address per 15 minutes; registration
+to 20; refresh and logout to 30; profile updates to 10. Exceeded windows return
+429 with a `Retry-After` header. Only a SHA-256 scope/address digest is stored.
+The backend currently does not trust forwarded IP headers by default; operators
+must configure trusted proxy behavior deliberately when deployed behind a
+reverse proxy. This control does not replace edge rate limiting.
+
+OTP delivery and verification remain disabled pending a product decision on
+the verification channel and recovery policy; no fake or unusable OTP flow is
+exposed.

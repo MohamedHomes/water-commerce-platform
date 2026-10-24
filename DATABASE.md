@@ -91,6 +91,16 @@ Migration `015` extends the inventory movement ledger for audited admin
 adjustments while retaining order-linked reserve/release movements.
 Migration `016` adds verified-purchase product reviews with pending moderation,
 approved-public visibility, and moderator attribution.
+Migration `017` adds nullable Arabic names and descriptions to categories,
+brands, and products. It preserves all existing catalog records and populates
+Arabic copy for the repository's deterministic seed catalog. English columns
+remain required and unchanged; clients may fall back to English when an Arabic
+field is empty. Arabic catalog content can be managed through the guarded admin
+catalog endpoints. Product media storage is not configured.
+Migration `018` adds a shared PostgreSQL-backed fixed-window rate-limit table.
+Only a SHA-256 digest of the limiter scope and client address is stored;
+attempt counters are updated atomically, and stale rows are pruned during
+requests. There is no process-local production fallback.
 
 For local PostgreSQL 16 verification, start the repository's database service
 with `docker compose up -d postgres`, configure `DATABASE_URL` for that

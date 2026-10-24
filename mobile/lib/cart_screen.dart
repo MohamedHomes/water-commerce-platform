@@ -38,6 +38,7 @@ class CartItem {
   const CartItem({
     required this.productId,
     required this.name,
+    this.nameAr,
     required this.quantity,
     required this.unitPrice,
     this.discountPercent,
@@ -45,6 +46,7 @@ class CartItem {
 
   final String productId;
   final String name;
+  final String? nameAr;
   final int quantity;
   final double unitPrice;
   final double? discountPercent;
@@ -82,6 +84,7 @@ class CartController extends StateNotifier<CartState> {
         return CartItem(
           productId: item['productId']?.toString() ?? '',
           name: item['name']?.toString() ?? 'Product',
+          nameAr: item['nameAr']?.toString(),
           quantity: int.tryParse(item['quantity']?.toString() ?? '0') ?? 0,
           unitPrice: double.tryParse(item['unitPrice']?.toString() ?? '0') ?? 0,
           discountPercent: item['discountPercent'] == null ? null : (double.tryParse(item['discountPercent']?.toString() ?? '0') ?? 0),
@@ -128,6 +131,19 @@ class CartController extends StateNotifier<CartState> {
     }
     await _dio.delete(
       '/cart/items/$productId',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    await loadCart();
+  }
+
+  Future<void> addItem(String productId, {int quantity = 1}) async {
+    final token = await _storage.read(key: 'auth_token');
+    if (token == null || token.isEmpty) {
+      throw StateError('Sign in is required to update your cart.');
+    }
+    await _dio.post(
+      '/cart/items',
+      data: {'productId': productId, 'quantity': quantity},
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
     await loadCart();
@@ -222,7 +238,11 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     leading: const CircleAvatar(
                       child: Icon(Icons.local_drink_rounded),
                     ),
-                    title: Text(item.name),
+                    title: Text(
+                      Localizations.localeOf(context).languageCode == 'ar' && item.nameAr?.isNotEmpty == true
+                          ? item.nameAr!
+                          : item.name,
+                    ),
                     subtitle: Text(localized(context, 'Qty {quantity} • SAR {price}', {
                       'quantity': item.quantity,
                       'price': item.unitPrice.toStringAsFixed(2),

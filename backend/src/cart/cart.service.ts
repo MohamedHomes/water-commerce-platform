@@ -29,6 +29,7 @@ export class UpdateCartItemDto {
 export interface CartItemSnapshot {
     productId: string;
     name: string;
+    nameAr?: string;
     imageUrl?: string;
     quantity: number;
     unitPrice: number;
@@ -56,6 +57,7 @@ export interface CartResponse {
 interface CartRow extends QueryResultRow {
     product_id: string;
     name: string;
+    name_ar: string | null;
     image_url: string | null;
     quantity: number;
     price: string | number;
@@ -217,7 +219,7 @@ export class CartService {
     private queryCart(userId: string, executor: QueryExecutor) {
         return executor.query<CartRow>(
             `
-                SELECT ci.product_id, p.name, p.image_url, ci.quantity, p.price,
+                SELECT ci.product_id, p.name, p.name_ar, p.image_url, ci.quantity, p.price,
                     p.compare_at_price, p.discount_percent, p.availability,
                     p.is_active, p.quantity AS stock_quantity
                 FROM carts c
@@ -236,6 +238,7 @@ export class CartService {
         return {
             productId: row.product_id,
             name: row.name,
+            nameAr: row.name_ar ?? undefined,
             imageUrl: row.image_url ?? undefined,
             quantity: row.quantity,
             unitPrice,

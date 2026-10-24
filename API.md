@@ -12,6 +12,9 @@
 - `GET /api/v1/products`
 - `GET /api/v1/catalog/products/:productId/reviews`
 - `POST /api/v1/catalog/products/:productId/reviews`
+- `GET /api/v1/catalog/categories`
+- `GET /api/v1/catalog/brands`
+- `GET /api/v1/catalog/products`
 - `GET /api/v1/categories`
 - `GET /api/v1/brands`
 - `GET /api/v1/cart`
@@ -49,6 +52,12 @@
 - `GET /api/v1/admin/reviews`
 - `PATCH /api/v1/admin/reviews/:id/status`
 - `GET /api/v1/admin/products`
+- `GET /api/v1/admin/catalog-terms`
+- `POST /api/v1/admin/categories`
+- `PATCH /api/v1/admin/categories/:id`
+- `POST /api/v1/admin/brands`
+- `PATCH /api/v1/admin/brands/:id`
+- `POST /api/v1/admin/products`
 - `PATCH /api/v1/admin/products/:id`
 - `GET /health`
 - `GET /health/live`
@@ -145,9 +154,28 @@
   override operation is exposed.
 - Admins can list pending product reviews and approve or reject each once;
   moderation decisions are audited.
-- `GET /api/v1/admin/products` returns the operational catalog view. Admins may
-  update a positive server-side price and/or active state; each change is
-  audited. Public customers cannot edit catalog data.
+- `GET /api/v1/admin/catalog-terms` returns category and brand records.
+  Admins can create and update categories and brands with English names/slugs
+  and optional Arabic names/descriptions.
+- Admin product creation requires an existing category and brand, a unique
+  lowercase URL slug, a positive price, and a non-negative integer stock
+  quantity. Optional Arabic product names/descriptions and package size are
+  accepted. Product updates support validated bilingual text, category/brand,
+  price, and active-state changes. Catalog changes are audited. Public
+  customers cannot edit catalog data.
+- Product media storage is not configured. Admin catalog operations do not
+  accept arbitrary image URLs or claim an upload has been stored.
+
+### Bilingual catalog and customer snapshots
+
+- Catalog category, brand, and product responses retain their existing
+  English fields and add optional `nameAr` and `descriptionAr` fields. Search
+  matches English and Arabic names/descriptions. Existing records are
+  preserved; migration 017 adds nullable Arabic columns and fills translations
+  only for the deterministic baseline seed records.
+- Cart items include optional `nameAr`. Checkout/order snapshots preserve the
+  bilingual product name so mobile clients can display the appropriate locale
+  without changing trusted pricing or historical English names.
 
 ### Product reviews
 
@@ -169,6 +197,25 @@
   "correlationId": "..."
 }
 ```
+
+## Rate limits
+
+Authentication rate limits are shared through PostgreSQL and return HTTP 429
+with a `Retry-After` header when exceeded:
+
+- login: 10 requests per client address per 15 minutes
+- registration: 20 requests per client address per 15 minutes
+- refresh: 30 requests per client address per 15 minutes
+- logout: 30 requests per client address per 15 minutes
+- profile updates: 10 requests per client address per 15 minutes
+
+The database stores a SHA-256 digest of the limiter scope/address key, not the
+plain address. Counts use an atomic database upsert, so multiple backend
+instances share the same window. Rate-limit database errors fail closed for
+the guarded request; the service does not fall back to in-memory counters.
+Behind a reverse proxy, configure trusted proxy handling explicitly before
+relying on client-address-based limits. These application limits are not a
+replacement for a deployment-level edge/WAF policy.
 
 ## Quality requirements
 

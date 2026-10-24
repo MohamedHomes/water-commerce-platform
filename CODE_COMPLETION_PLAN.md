@@ -38,33 +38,36 @@ application. Do not introduce external translation services.
    left-to-right.
 4. Automated tests cover locale switching/persistence and representative
    Arabic/RTL content on mobile and admin.
-5. Backend APIs, identifiers, request payloads, and server-authoritative
-   business behavior remain unchanged.
+5. Existing English fields, identifiers, server-authoritative pricing, and
+   existing records remain compatible; optional bilingual fields are additive.
 
-**Progress:** Admin selection/persistence, first-party dashboard translation,
-common server-error/status translation, document language, and RTL table/forms
-are implemented. The mobile app now has an app-wide persisted locale
-controller, a language switch on its main screens, Arabic translations for
-customer-facing static copy/known notifications/statuses, and RTL supplied by
-Flutter's Arabic localization delegates. Flutter and admin localization tests
-cover locale state, translated examples, and direction. Remaining work is a
-complete translation-key audit, missing language content in catalog data,
-screen-level UI/accessibility review, and Android/iOS device verification; the
-sprint is not yet complete.
+**Progress:** Literal mobile localization call sites are checked against the
+Arabic catalog, and mobile/admin tests reject duplicate keys and verify
+English/Arabic parity. Locale persistence and RTL/LTR behavior have automated
+coverage. Migration 017 adds backward-compatible optional Arabic catalog
+fields; catalog list/detail/search, cart/order snapshots, and the guarded admin
+catalog API support bilingual content. Admin product/category/brand creation
+and editing are available and audited. Product media is visibly disabled
+because no storage adapter is configured. Backend (12 suites/29 tests), admin
+(build, lint, 4 localization tests), and Flutter (analysis, 13 tests) currently
+pass. The admin login's Arabic copy, RTL direction, and reload persistence were
+verified in a browser; the authenticated dashboard and mobile device/
+accessibility review remain outstanding.
 
 ## P1 — Backend security controls
 
-**Status:** Not started; OTP channel decision required before enforcing
-verification on registration or sensitive account changes.  
+**Status:** Partially implemented. Database-backed fixed-window limits now
+protect login, registration, refresh, logout, and profile updates. OTP channel
+decision remains required before verification can be enabled.  
 **Dependencies:** A selected verification channel/provider or an explicit
 operator decision to use authenticator-app TOTP. Provider credentials remain
 out of scope until onboarding.
 
 **Scope and affected components**
 
-- Add bounded, persistent rate limits for login, registration, refresh, and
-  sensitive mutation routes; prefer database-backed state so production does
-  not silently fall back to per-process memory.
+- Extend rate-limit coverage to additional high-risk mutations as requirements
+  demand; keep the shared database-backed implementation and fail closed on
+  limiter storage errors.
 - Define OTP enrollment, delivery, expiry, attempt limits, replay prevention,
   recovery, and account lockout after selecting its channel.
 - Review session revocation/logout semantics and error/log redaction.
@@ -75,16 +78,20 @@ out of scope until onboarding.
 
 - Rate limits are atomic across application instances and return a documented
   429 response without logging credentials/tokens.
-- Tests prove limits, expiry/reset, customer isolation, and concurrent safety.
+- Tests prove thresholds, window expiry/reset, address-key separation, and
+  concurrent counter updates.
 - OTP cannot be enabled without a delivery/authenticator choice; secrets and
   codes are never returned in production API responses or logs.
 - Existing auth/customer/admin isolation tests continue to pass.
 
 ## P2 — Admin catalog completeness
 
-**Status:** Partially implemented. Listing, price update, and active-state
-control exist; product creation, category/brand authoring, and media upload
-interfaces are not evidenced.
+**Status:** Application CRUD implemented; media upload unavailable pending
+storage configuration. Product listing/edit/create, category/brand
+create/edit, bilingual content, server validation, referential checks, unique
+slug conflicts, stock-derived availability, and audit entries are covered by
+backend API tests. The admin presents a disabled media control with an explicit
+unconfigured notice; no image URL or fake upload is accepted.
 
 **Dependencies:** Confirm supported product fields and media storage strategy
 before exposing uploads. Do not claim object storage works until a real adapter
@@ -93,12 +100,32 @@ is configured and tested.
 **Acceptance criteria**
 
 - Admin product creation/update validates fields and records audit events.
-- Product categories/brands remain referentially valid; availability derives
-  from active state and stock.
-- Media interface validates allowed content type/size and fails explicitly
-  when storage is unconfigured; it never stores arbitrary remote URLs as
-  trusted media.
+- Product categories/brands remain referentially valid; stock availability is
+  maintained separately from the product active flag.
+- Media remains unavailable until a storage provider is selected; do not
+  represent a disabled UI control as a working upload integration.
 - Tests cover role isolation, validation, audit, and stock availability.
+
+## P2 — Customer catalog experience
+
+**Status:** Implemented in the mobile app.  
+**Dependencies:** Existing public catalog/search endpoints and authenticated
+cart endpoint.
+
+- Added bilingual product browsing, category filtering, search, paging, stock
+  availability display, and add-to-cart controls in Flutter.
+- Inactive products are excluded from public list/detail API results.
+- Tests cover bilingual model mapping, English fallback for legacy records,
+  and inactive product visibility.
+- Product imagery remains a placeholder until a real media storage adapter
+  is selected and verified.
+
+**Acceptance criteria**
+
+- Customer catalog searches and filters through server APIs rather than
+  fabricated client-side products.
+- Arabic content is preferred when present, with English fallback for legacy
+  records; unavailable products cannot be added to the cart.
 
 ## P3 — Product completeness and quality gates
 
