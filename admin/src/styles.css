@@ -27,8 +27,10 @@ body {
 
 .topbar {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     margin-bottom: 32px;
 }
 
@@ -144,6 +146,26 @@ table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
+}
+
+[dir="rtl"] table {
+    text-align: right;
+}
+
+[dir="rtl"] .eyebrow {
+    letter-spacing: normal;
+}
+
+[dir="rtl"] .panel ul {
+    padding-left: 0;
+    padding-right: 20px;
+}
+
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="password"] {
+    direction: ltr;
+    text-align: right;
 }
 
 th,

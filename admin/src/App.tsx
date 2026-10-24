@@ -1,4 +1,14 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import {
+    AdminLanguage,
+    AdminMessage,
+    formatMessage,
+    loadAdminLanguage,
+    syncAdminLanguage,
+    translate,
+    translateError,
+    translateStatus,
+} from './i18n';
 
 const apiBaseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
@@ -89,6 +99,17 @@ async function apiRequest<T>(path: string, token: string, options: RequestInit =
 }
 
 function App() {
+    const [language, setLanguage] = useState<AdminLanguage>(() => loadAdminLanguage((key) => localStorage.getItem(key)));
+    const t = useCallback((key: AdminMessage) => translate(language, key), [language]);
+    const format = useCallback(
+        (key: AdminMessage, values: Record<string, string | number>) => formatMessage(language, key, values),
+        [language],
+    );
+    const errorMessage = useCallback(
+        (requestError: unknown, fallback: AdminMessage) =>
+            requestError instanceof Error ? translateError(language, requestError.message) : t(fallback),
+        [language, t],
+    );
     const [token, setToken] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -105,6 +126,10 @@ function App() {
     const [discountValue, setDiscountValue] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        syncAdminLanguage(language, (key, value) => localStorage.setItem(key, value), document.documentElement);
+    }, [language]);
 
     const refreshDashboard = useCallback(async (accessToken: string) => {
         setLoading(true);
@@ -127,11 +152,11 @@ function App() {
             setReviews(reviewList.items);
             setProducts(productList.items);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Unable to load operations data');
+            setError(errorMessage(requestError, 'requestFailed'));
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [errorMessage]);
 
     useEffect(() => {
         if (token) void refreshDashboard(token);
@@ -149,11 +174,11 @@ function App() {
             });
             const payload = await response.json() as LoginResponse & { message?: string };
             if (!response.ok) throw new Error(payload.message ?? 'Sign in failed');
-            if (payload.customer.role !== 'admin') throw new Error('This account is not authorized for administration');
+            if (payload.customer.role !== 'admin') throw new Error(t('notAuthorized'));
             setToken(payload.accessToken);
             setPassword('');
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Sign in failed');
+            setError(errorMessage(requestError, 'loginFailed'));
         } finally {
             setLoading(false);
         }
@@ -175,7 +200,7 @@ function App() {
             setDiscountValue('');
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Promotion could not be saved');
+            setError(errorMessage(requestError, 'promotionCreated'));
         }
     }
 
@@ -188,7 +213,7 @@ function App() {
             });
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Promotion could not be updated');
+            setError(errorMessage(requestError, 'promotionUpdated'));
         }
     }
 
@@ -201,7 +226,7 @@ function App() {
             });
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Inventory could not be adjusted');
+            setError(errorMessage(requestError, 'inventoryUpdated'));
         }
     }
 
@@ -217,7 +242,7 @@ function App() {
             });
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Delivery status could not be updated');
+            setError(errorMessage(requestError, 'deliveryUpdated'));
         }
     }
 
@@ -230,7 +255,7 @@ function App() {
             });
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Review moderation failed');
+            setError(errorMessage(requestError, 'moderationFailed'));
         }
     }
 
@@ -243,7 +268,7 @@ function App() {
             });
             await refreshDashboard(token);
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : 'Product could not be updated');
+            setError(errorMessage(requestError, 'productUpdated'));
         }
     }
 
@@ -252,16 +277,19 @@ function App() {
             <main className="app-shell auth-shell">
                 <header className="topbar">
                     <div>
-                        <p className="eyebrow">Operations dashboard</p>
+                        <p className="eyebrow">{t('operationsDashboard')}</p>
                         <h1>AquaFlow Admin</h1>
                     </div>
+                    <button className="secondary" type="button" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}>
+                        {t('language')}
+                    </button>
                 </header>
                 <form className="card login-form" onSubmit={login}>
-                    <h2>Administrator sign in</h2>
-                    <label>Email<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-                    <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+                    <h2>{t('administratorSignIn')}</h2>
+                    <label>{t('email')}<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+                    <label>{t('password')}<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
                     {error && <p className="error" role="alert">{error}</p>}
-                    <button disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+                    <button disabled={loading}>{loading ? t('signingIn') : t('signIn')}</button>
                 </form>
             </main>
         );
@@ -271,9 +299,12 @@ function App() {
         <main className="app-shell">
             <header className="topbar">
                 <div>
-                    <p className="eyebrow">Operations dashboard</p>
+                    <p className="eyebrow">{t('operationsDashboard')}</p>
                     <h1>AquaFlow Admin</h1>
                 </div>
+                <button className="secondary" type="button" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}>
+                    {t('language')}
+                </button>
                 <button className="secondary" onClick={() => {
                     setToken('');
                     setDashboard(null);
@@ -284,33 +315,33 @@ function App() {
                     setReviews([]);
                     setProducts([]);
                     setPriceEdits({});
-                }}>Sign out</button>
+                }}>{t('signOut')}</button>
             </header>
             {error && <p className="error" role="alert">{error}</p>}
-            {loading && <p role="status">Refreshing operations data…</p>}
+            {loading && <p role="status">{t('refreshing')}</p>}
             {dashboard && (
                 <>
-                    <section className="grid" aria-label="Operations metrics">
-                        <Metric label="All orders" value={dashboard.totalOrders} />
-                        <Metric label="Open orders" value={dashboard.openOrders} />
-                        <Metric label="Awaiting payment" value={dashboard.awaitingPayment} />
-                        <Metric label="Paid revenue" value={`${dashboard.currency} ${dashboard.paidRevenue.toFixed(2)}`} />
-                        <Metric label="Pending dispatch" value={dashboard.pendingDispatch} />
-                        <Metric label="Active products" value={dashboard.activeProducts} />
+                    <section className="grid" aria-label={t('operationsMetrics')}>
+                        <Metric label={t('allOrders')} value={dashboard.totalOrders} />
+                        <Metric label={t('openOrders')} value={dashboard.openOrders} />
+                        <Metric label={t('awaitingPayment')} value={dashboard.awaitingPayment} />
+                        <Metric label={t('paidRevenue')} value={`${dashboard.currency} ${dashboard.paidRevenue.toFixed(2)}`} />
+                        <Metric label={t('pendingDispatch')} value={dashboard.pendingDispatch} />
+                        <Metric label={t('activeProducts')} value={dashboard.activeProducts} />
                     </section>
                     <section className="card panel">
-                        <h2>Recent orders</h2>
-                        {orders.length === 0 ? <p>No orders yet.</p> : (
+                        <h2>{t('recentOrders')}</h2>
+                        {orders.length === 0 ? <p>{t('noOrders')}</p> : (
                             <div className="table-wrap">
                                 <table>
-                                    <thead><tr><th>Order</th><th>Status</th><th>Payment</th><th>Total</th><th>Created</th></tr></thead>
+                                    <thead><tr><th>{t('order')}</th><th>{t('status')}</th><th>{t('payment')}</th><th>{t('total')}</th><th>{t('created')}</th></tr></thead>
                                     <tbody>{orders.map((order) => (
                                         <tr key={order.id}>
                                             <td>{order.id.slice(0, 8)}</td>
-                                            <td>{order.status}</td>
-                                            <td>{order.paymentMethod}</td>
+                                            <td>{translateStatus(language, order.status)}</td>
+                                            <td>{translateStatus(language, order.paymentMethod)}</td>
                                             <td>{order.currency} {order.total.toFixed(2)}</td>
-                                            <td>{new Date(order.createdAt).toLocaleString()}</td>
+                                            <td>{new Date(order.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-SA')}</td>
                                         </tr>
                                     ))}</tbody>
                                 </table>
@@ -318,26 +349,26 @@ function App() {
                         )}
                     </section>
                     <section className="card panel">
-                        <h2>Promotions</h2>
+                        <h2>{t('promotions')}</h2>
                         <form className="promotion-form" onSubmit={createPromotion}>
-                            <label>Code<input required maxLength={64} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /></label>
-                            <label>Discount type<select value={discountType} onChange={(event) => setDiscountType(event.target.value as 'percentage' | 'fixed')}>
-                                <option value="percentage">Percentage</option><option value="fixed">Fixed SAR</option>
+                            <label>{t('code')}<input required maxLength={64} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /></label>
+                            <label>{t('discountType')}<select value={discountType} onChange={(event) => setDiscountType(event.target.value as 'percentage' | 'fixed')}>
+                                <option value="percentage">{t('percentage')}</option><option value="fixed">{t('fixedSar')}</option>
                             </select></label>
-                            <label>Value<input type="number" min="0.01" max={discountType === 'percentage' ? 100 : undefined} step="0.01" required value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} /></label>
-                            <button disabled={loading}>Create promotion</button>
+                            <label>{t('value')}<input type="number" min="0.01" max={discountType === 'percentage' ? 100 : undefined} step="0.01" required value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} /></label>
+                            <button disabled={loading}>{t('createPromotion')}</button>
                         </form>
-                        {promotions.length === 0 ? <p>No promotions configured.</p> : (
+                        {promotions.length === 0 ? <p>{t('noPromotions')}</p> : (
                             <div className="table-wrap">
                                 <table>
-                                    <thead><tr><th>Code</th><th>Discount</th><th>Redemptions</th><th>Status</th><th /></tr></thead>
+                                    <thead><tr><th>{t('code')}</th><th>{t('discount')}</th><th>{t('redemptions')}</th><th>{t('status')}</th><th /></tr></thead>
                                     <tbody>{promotions.map((promotion) => (
                                         <tr key={promotion.id}>
                                             <td>{promotion.code}</td>
-                                            <td>{promotion.discount_value}{promotion.discount_type === 'percentage' ? '%' : ' SAR'}</td>
+                                            <td>{promotion.discount_type === 'percentage' ? `${promotion.discount_value}%` : format('discountSar', { value: promotion.discount_value })}</td>
                                             <td>{promotion.redemption_count}</td>
-                                            <td>{promotion.is_active ? 'Active' : 'Inactive'}</td>
-                                            <td><button className="secondary" onClick={() => void togglePromotion(promotion)}>{promotion.is_active ? 'Disable' : 'Enable'}</button></td>
+                                            <td>{promotion.is_active ? t('active') : t('inactive')}</td>
+                                            <td><button className="secondary" onClick={() => void togglePromotion(promotion)}>{promotion.is_active ? t('disable') : t('enable')}</button></td>
                                         </tr>
                                     ))}</tbody>
                                 </table>
@@ -345,19 +376,19 @@ function App() {
                         )}
                     </section>
                     <section className="card panel">
-                        <h2>Inventory</h2>
-                        <p>Product-level stock pool; adjustments are recorded in the audit ledger.</p>
+                        <h2>{t('inventory')}</h2>
+                        <p>{t('inventoryDescription')}</p>
                         <div className="table-wrap">
                             <table>
-                                <thead><tr><th>Product</th><th>Stock</th><th>Availability</th><th>Adjustment</th></tr></thead>
+                                <thead><tr><th>{t('product')}</th><th>{t('stock')}</th><th>{t('availability')}</th><th>{t('adjustment')}</th></tr></thead>
                                 <tbody>{inventory.map((item) => (
                                     <tr key={item.id}>
                                         <td>{item.name}</td>
                                         <td>{item.quantity}</td>
-                                        <td>{item.availability}</td>
+                                        <td>{translateStatus(language, item.availability)}</td>
                                         <td>
-                                            <button className="secondary" aria-label={`Remove one ${item.name}`} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
-                                            <button aria-label={`Add one ${item.name}`} onClick={() => void adjustInventory(item, 1)}>+</button>
+                                            <button className="secondary" aria-label={format('removeOne', { product: item.name })} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
+                                            <button aria-label={format('addOne', { product: item.name })} onClick={() => void adjustInventory(item, 1)}>+</button>
                                         </td>
                                     </tr>
                                 ))}</tbody>
@@ -365,11 +396,11 @@ function App() {
                         </div>
                     </section>
                     <section className="card panel">
-                        <h2>Delivery operations</h2>
-                        <p>Manual status updates only. No driver assignment or live location feed is connected.</p>
+                        <h2>{t('deliveryOperations')}</h2>
+                        <p>{t('manualDeliveryDescription')}</p>
                         <div className="table-wrap">
                             <table>
-                                <thead><tr><th>Order</th><th>Status</th><th>Zone estimate</th><th>Action</th></tr></thead>
+                                <thead><tr><th>{t('order')}</th><th>{t('status')}</th><th>{t('zoneEstimate')}</th><th>{t('action')}</th></tr></thead>
                                 <tbody>{deliveries.map((delivery) => {
                                     const nextStatus = delivery.status === 'pending_dispatch'
                                         ? 'assigned'
@@ -379,11 +410,11 @@ function App() {
                                     return (
                                         <tr key={delivery.id}>
                                             <td>{delivery.order_id.slice(0, 8)}</td>
-                                            <td>{delivery.status}</td>
-                                            <td>{delivery.estimated_minutes} min</td>
+                                            <td>{translateStatus(language, delivery.status)}</td>
+                                            <td>{format('minutes', { count: delivery.estimated_minutes })}</td>
                                             <td>{nextStatus
-                                                ? <button onClick={() => void updateDelivery(delivery, nextStatus)}>Mark {nextStatus.replace('_', ' ')}</button>
-                                                : 'No action available'}</td>
+                                                ? <button onClick={() => void updateDelivery(delivery, nextStatus)}>{format('markStatus', { status: translateStatus(language, nextStatus) })}</button>
+                                                : t('noAction')}</td>
                                         </tr>
                                     );
                                 })}</tbody>
@@ -391,19 +422,19 @@ function App() {
                         </div>
                     </section>
                     <section className="card panel">
-                        <h2>Reviews awaiting moderation</h2>
-                        {reviews.length === 0 ? <p>No reviews require moderation.</p> : (
+                        <h2>{t('reviewsAwaitingModeration')}</h2>
+                        {reviews.length === 0 ? <p>{t('noReviews')}</p> : (
                             <div className="table-wrap">
                                 <table>
-                                    <thead><tr><th>Product</th><th>Rating</th><th>Comment</th><th>Action</th></tr></thead>
+                                    <thead><tr><th>{t('product')}</th><th>{t('rating')}</th><th>{t('comment')}</th><th>{t('action')}</th></tr></thead>
                                     <tbody>{reviews.map((review) => (
                                         <tr key={review.id}>
                                             <td>{review.product_name}</td>
                                             <td>{review.rating} / 5</td>
                                             <td>{review.comment || '—'}</td>
                                             <td>
-                                                <button onClick={() => void moderateReview(review, 'approved')}>Approve</button>{' '}
-                                                <button className="secondary" onClick={() => void moderateReview(review, 'rejected')}>Reject</button>
+                                                <button onClick={() => void moderateReview(review, 'approved')}>{t('approve')}</button>{' '}
+                                                <button className="secondary" onClick={() => void moderateReview(review, 'rejected')}>{t('reject')}</button>
                                             </td>
                                         </tr>
                                     ))}</tbody>
@@ -412,10 +443,10 @@ function App() {
                         )}
                     </section>
                     <section className="card panel">
-                        <h2>Catalog operations</h2>
+                        <h2>{t('catalogOperations')}</h2>
                         <div className="table-wrap">
                             <table>
-                                <thead><tr><th>Product</th><th>Category</th><th>Stock</th><th>Price (SAR)</th><th>Status</th></tr></thead>
+                                <thead><tr><th>{t('product')}</th><th>{t('category')}</th><th>{t('stock')}</th><th>{t('priceSar')}</th><th>{t('status')}</th></tr></thead>
                                 <tbody>{products.map((product) => (
                                     <tr key={product.id}>
                                         <td>{product.name}</td>
@@ -430,7 +461,7 @@ function App() {
                                                 }
                                             }}>
                                                 <input
-                                                    aria-label={`Price for ${product.name}`}
+                                                    aria-label={format('priceFor', { product: product.name })}
                                                     type="number"
                                                     min="0.01"
                                                     step="0.01"
@@ -440,12 +471,12 @@ function App() {
                                                         [product.id]: event.target.value,
                                                     })}
                                                 />
-                                                <button className="secondary">Save</button>
+                                                <button className="secondary">{t('save')}</button>
                                             </form>
                                         </td>
                                         <td>
                                             <button className={product.is_active ? 'secondary' : ''} onClick={() => void updateProduct(product, { isActive: !product.is_active })}>
-                                                {product.is_active ? 'Active' : 'Inactive'}
+                                                {product.is_active ? t('active') : t('inactive')}
                                             </button>
                                         </td>
                                     </tr>

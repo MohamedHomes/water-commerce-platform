@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import 'api_config.dart';
 import 'cart_screen.dart';
+import 'localization.dart';
 
 void main() {
   runApp(const ProviderScope(child: AquaFlowApp()));
@@ -641,15 +642,16 @@ final appRouter = GoRouter(
   ],
 );
 
-class AquaFlowApp extends StatelessWidget {
+class AquaFlowApp extends ConsumerWidget {
   const AquaFlowApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'AquaFlow',
       debugShowCheckedModeBanner: false,
       routerConfig: appRouter,
+      locale: ref.watch(appLocaleProvider),
       supportedLocales: const [Locale('en'), Locale('ar')],
       localizationsDelegates: const [
         GlobalWidgetsLocalizations.delegate,
@@ -673,8 +675,9 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('AquaFlow'),
         actions: [
+          const LanguageSwitch(),
           IconButton(
-            tooltip: 'Sign out',
+            tooltip: localized(context, 'Sign out'),
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await _secureStorage.delete(key: 'auth_token');
@@ -689,54 +692,54 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Fresh water, delivered with care',
+            Text(
+              localized(context, 'Fresh water, delivered with care'),
               style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 20),
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: const [
-                _FeatureChip(label: 'Bottled Water'),
-                _FeatureChip(label: 'Bulk Packs'),
-                _FeatureChip(label: 'Delivery'),
-                _FeatureChip(label: 'Customer Care'),
+              children: [
+                _FeatureChip(label: localized(context, 'Bottled Water')),
+                _FeatureChip(label: localized(context, 'Bulk Packs')),
+                _FeatureChip(label: localized(context, 'Delivery')),
+                _FeatureChip(label: localized(context, 'Customer Care')),
               ],
             ),
             const SizedBox(height: 24),
             _ActionCard(
               icon: Icons.location_on_outlined,
-              title: 'Addresses',
-              subtitle: 'Manage delivery addresses and defaults',
+              title: localized(context, 'Addresses'),
+              subtitle: localized(context, 'Manage delivery addresses and defaults'),
               onPressed: () => context.go('/addresses'),
             ),
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.payment_outlined,
-              title: 'Checkout',
-              subtitle: 'Review delivery and payment details',
+              title: localized(context, 'Checkout'),
+              subtitle: localized(context, 'Review delivery and payment details'),
               onPressed: () => context.go('/checkout'),
             ),
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.shopping_cart_outlined,
-              title: 'Cart',
-              subtitle: 'Review order total before checkout',
+              title: localized(context, 'Cart'),
+              subtitle: localized(context, 'Review order total before checkout'),
               onPressed: () => context.go('/cart'),
             ),
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.receipt_long_outlined,
-              title: 'Orders',
-              subtitle: 'View, cancel, or reorder your purchases',
+              title: localized(context, 'Orders'),
+              subtitle: localized(context, 'View, cancel, or reorder your purchases'),
               onPressed: () => context.go('/orders'),
             ),
             const SizedBox(height: 12),
             _ActionCard(
               icon: Icons.notifications_outlined,
-              title: 'Notifications',
-              subtitle: 'Order and payment updates',
+              title: localized(context, 'Notifications'),
+              subtitle: localized(context, 'Order and payment updates'),
               onPressed: () => context.go('/notifications'),
             ),
           ],
@@ -792,7 +795,10 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('AquaFlow')),
+      appBar: AppBar(
+        title: const Text('AquaFlow'),
+        actions: const [LanguageSwitch()],
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
@@ -802,47 +808,47 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.all(24),
               shrinkWrap: true,
               children: [
-                Text(_register ? 'Create account' : 'Sign in', style: Theme.of(context).textTheme.headlineSmall),
+                Text(localized(context, _register ? 'Create account' : 'Sign in'), style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 20),
                 if (_register) ...[
                   TextFormField(
                     controller: _firstNameController,
-                    decoration: const InputDecoration(labelText: 'First name'),
-                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? 'Enter your first name' : null,
+                    decoration: InputDecoration(labelText: localized(context, 'First name')),
+                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? localized(context, 'Enter your first name') : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _lastNameController,
-                    decoration: const InputDecoration(labelText: 'Last name'),
-                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? 'Enter your last name' : null,
+                    decoration: InputDecoration(labelText: localized(context, 'Last name')),
+                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? localized(context, 'Enter your last name') : null,
                   ),
                   const SizedBox(height: 12),
                 ],
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Email'),
-                  validator: (value) => value == null || !value.contains('@') ? 'Enter a valid email' : null,
+                  decoration: InputDecoration(labelText: localized(context, 'Email')),
+                  validator: (value) => value == null || !value.contains('@') ? localized(context, 'Enter a valid email') : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                  validator: (value) => value == null || value.length < 8 ? 'Password must be at least 8 characters' : null,
+                  decoration: InputDecoration(labelText: localized(context, 'Password')),
+                  validator: (value) => value == null || value.length < 8 ? localized(context, 'Password must be at least 8 characters') : null,
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _loading ? null : _submit,
-                  child: _loading ? const CircularProgressIndicator() : Text(_register ? 'Create account' : 'Sign in'),
+                  child: _loading ? const CircularProgressIndicator() : Text(localized(context, _register ? 'Create account' : 'Sign in')),
                 ),
                 TextButton(
                   onPressed: _loading ? null : () => setState(() { _register = !_register; _error = null; }),
-                  child: Text(_register ? 'I already have an account' : 'Create an account'),
+                  child: Text(localized(context, _register ? 'I already have an account' : 'Create an account')),
                 ),
               ],
             ),
@@ -872,7 +878,10 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
     final state = ref.watch(addressProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Addresses')),
+      appBar: AppBar(
+        title: Text(localized(context, 'Addresses')),
+        actions: const [LanguageSwitch()],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/addresses/new'),
         child: const Icon(Icons.add),
@@ -884,18 +893,18 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(state.error!),
+                      Text(localizedError(context, state.error!)),
                       const SizedBox(height: 12),
                       FilledButton(
                         onPressed: () => ref.read(addressProvider.notifier).load(),
-                        child: const Text('Retry'),
+                        child: Text(localized(context, 'Retry')),
                       ),
                     ],
                   ),
                 )
               : state.items.isEmpty
-                  ? const Center(
-                      child: Text('No addresses yet. Add your first delivery address.'),
+                  ? Center(
+                      child: Text(localized(context, 'No addresses yet. Add your first delivery address.')),
                     )
                   : ListView.builder(
                       itemCount: state.items.length,
@@ -905,13 +914,13 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           child: ListTile(
                             title: Text(item.label),
-                            subtitle: Text('${item.recipientName}\n${item.city}, ${item.district}\n${item.street}, ${item.building}${item.apartment != null ? ' - Apt ${item.apartment}' : ''}'),
+                            subtitle: Text('${item.recipientName}\n${item.city}, ${item.district}\n${item.street}, ${item.building}${item.apartment != null ? ' - ${localized(context, 'Apt {apartment}', {'apartment': item.apartment!})}' : ''}'),
                             isThreeLine: true,
                             trailing: PopupMenuButton<String>(
                               itemBuilder: (_) => [
-                                const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                const PopupMenuItem(value: 'default', child: Text('Set default')),
-                                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                                PopupMenuItem(value: 'edit', child: Text(localized(context, 'Edit'))),
+                                PopupMenuItem(value: 'default', child: Text(localized(context, 'Set default'))),
+                                PopupMenuItem(value: 'delete', child: Text(localized(context, 'Delete'))),
                               ],
                               onSelected: (value) async {
                                 if (value == 'edit') {
@@ -923,7 +932,7 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                                   } catch (_) {
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Could not update the default address.')),
+                                        SnackBar(content: Text(localized(context, 'Could not update the default address.'))),
                                       );
                                     }
                                   }
@@ -934,7 +943,7 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                                   } catch (_) {
                                     if (context.mounted) {
                                       ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Could not delete the address.')),
+                                        SnackBar(content: Text(localized(context, 'Could not delete the address.'))),
                                       );
                                     }
                                   }
@@ -975,6 +984,7 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
   bool _loadingCities = true;
   bool _saving = false;
   bool _isDefault = false;
+  bool _localizedDefaultLabel = false;
   String? _error;
 
   @override
@@ -1021,6 +1031,15 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_localizedDefaultLabel && widget.address == null) {
+      _labelController.text = localized(context, 'Home');
+      _localizedDefaultLabel = true;
+    }
+  }
+
+  @override
   void dispose() {
     _labelController.dispose();
     _recipientController.dispose();
@@ -1038,7 +1057,10 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.address == null ? 'Add address' : 'Edit address')),
+      appBar: AppBar(
+        title: Text(localized(context, widget.address == null ? 'Add address' : 'Edit address')),
+        actions: const [LanguageSwitch()],
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -1046,73 +1068,73 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
           children: [
             if (_loadingCities) const LinearProgressIndicator(),
             if (_error != null) ...[
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              TextButton(onPressed: _loadCities, child: const Text('Retry')),
+              Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              TextButton(onPressed: _loadCities, child: Text(localized(context, 'Retry'))),
             ],
             TextFormField(
               controller: _labelController,
-              decoration: const InputDecoration(labelText: 'Label'),
-              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a label' : null,
+              decoration: InputDecoration(labelText: localized(context, 'Label')),
+              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a label') : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _recipientController,
-              decoration: const InputDecoration(labelText: 'Recipient name'),
-              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a recipient name' : null,
+              decoration: InputDecoration(labelText: localized(context, 'Recipient name')),
+              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a recipient name') : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(labelText: 'Phone'),
+              decoration: InputDecoration(labelText: localized(context, 'Phone')),
               validator: (value) => value == null || !RegExp(r'^[+0-9\s-]{7,20}$').hasMatch(value.trim())
-                  ? 'Enter a valid phone number'
+                  ? localized(context, 'Enter a valid phone number')
                   : null,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _cities.contains(_cityController.text) ? _cityController.text : null,
-              decoration: const InputDecoration(labelText: 'City'),
+              decoration: InputDecoration(labelText: localized(context, 'City')),
               items: _cities.map((city) => DropdownMenuItem(value: city, child: Text(city))).toList(),
               onChanged: (city) => _cityController.text = city ?? '',
-              validator: (value) => value == null ? 'Select a configured city' : null,
+              validator: (value) => value == null ? localized(context, 'Select a configured city') : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _districtController,
-              decoration: const InputDecoration(labelText: 'District'),
-              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a district' : null,
+              decoration: InputDecoration(labelText: localized(context, 'District')),
+              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a district') : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _streetController,
-              decoration: const InputDecoration(labelText: 'Street'),
-              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a street' : null,
+              decoration: InputDecoration(labelText: localized(context, 'Street')),
+              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a street') : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _buildingController,
-              decoration: const InputDecoration(labelText: 'Building'),
-              validator: (value) => value == null || value.trim().isEmpty ? 'Enter a building' : null,
+              decoration: InputDecoration(labelText: localized(context, 'Building')),
+              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a building') : null,
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: TextFormField(controller: _apartmentController, decoration: const InputDecoration(labelText: 'Apartment'))),
+                Expanded(child: TextFormField(controller: _apartmentController, decoration: InputDecoration(labelText: localized(context, 'Apartment')))),
                 const SizedBox(width: 12),
-                Expanded(child: TextFormField(controller: _floorController, decoration: const InputDecoration(labelText: 'Floor'))),
+                Expanded(child: TextFormField(controller: _floorController, decoration: InputDecoration(labelText: localized(context, 'Floor')))),
               ],
             ),
             const SizedBox(height: 12),
-            TextFormField(controller: _notesController, decoration: const InputDecoration(labelText: 'Notes')),
+            TextFormField(controller: _notesController, decoration: InputDecoration(labelText: localized(context, 'Notes'))),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               value: _isDefault,
               onChanged: (value) => setState(() => _isDefault = value ?? false),
-              title: const Text('Set as default address'),
+              title: Text(localized(context, 'Set as default address')),
             ),
             if (_error != null)
-              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _saving || _loadingCities ? null : () async {
@@ -1142,7 +1164,7 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
                   if (mounted) setState(() { _saving = false; _error = error.toString(); });
                 }
               },
-              child: _saving ? const CircularProgressIndicator() : const Text('Save address'),
+              child: _saving ? const CircularProgressIndicator() : Text(localized(context, 'Save address')),
             ),
           ],
         ),
@@ -1258,33 +1280,36 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final addresses = ref.watch(addressProvider).items;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Checkout')),
+      appBar: AppBar(
+        title: Text(localized(context, 'Checkout')),
+        actions: const [LanguageSwitch()],
+      ),
       body: loading && addresses.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('Delivery address', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(localized(context, 'Delivery address'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           if (addresses.isEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('No saved addresses.'),
+                Text(localized(context, 'No saved addresses.')),
                 TextButton.icon(
                   onPressed: () async {
                     await context.push('/addresses/new');
                     await _loadCheckoutData();
                   },
                   icon: const Icon(Icons.add_location_alt_outlined),
-                  label: const Text('Add address'),
+                  label: Text(localized(context, 'Add address')),
                 ),
               ],
             )
           else
             DropdownButtonFormField<String>(
               initialValue: selectedAddressId,
-              decoration: const InputDecoration(labelText: 'Choose an address'),
+              decoration: InputDecoration(labelText: localized(context, 'Choose an address')),
               items: addresses.map((address) => DropdownMenuItem(
                 value: address.id,
                 child: Text('${address.label} · ${address.city}, ${address.street}', overflow: TextOverflow.ellipsis),
@@ -1296,33 +1321,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               },
             ),
           const SizedBox(height: 20),
-          const Text('Delivery zone', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(localized(context, 'Delivery zone'), style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
             initialValue: zones.any((zone) => zone.id == selectedZoneId) ? selectedZoneId : null,
-            decoration: const InputDecoration(labelText: 'Choose a delivery zone'),
+            decoration: InputDecoration(labelText: localized(context, 'Choose a delivery zone')),
             items: zones.map((zone) => DropdownMenuItem(
               value: zone.id,
-              child: Text('${zone.name} · ${zone.estimatedMinutes} min'),
+              child: Text('${zone.name} · ${localized(context, '{minutes} minutes', {'minutes': zone.estimatedMinutes})}'),
             )).toList(),
             onChanged: (id) => setState(() { selectedZoneId = id; summary = null; }),
           ),
           const SizedBox(height: 20),
-          const Text('Delivery option', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(localized(context, 'Delivery option'), style: const TextStyle(fontWeight: FontWeight.bold)),
           SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'standard', label: Text('Standard')),
-              ButtonSegment(value: 'express', label: Text('Express')),
+            segments: [
+              ButtonSegment(value: 'standard', label: Text(localized(context, 'Standard'))),
+              ButtonSegment(value: 'express', label: Text(localized(context, 'Express'))),
             ],
             selected: {deliveryOption},
             onSelectionChanged: (value) => setState(() { deliveryOption = value.first; summary = null; }),
           ),
           const SizedBox(height: 20),
-          const Text('Payment method', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text(localized(context, 'Payment method'), style: const TextStyle(fontWeight: FontWeight.bold)),
           SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'card', label: Text('Card')),
-              ButtonSegment(value: 'cash', label: Text('Cash')),
+            segments: [
+              ButtonSegment(value: 'card', label: Text(localized(context, 'Card'))),
+              ButtonSegment(value: 'cash', label: Text(localized(context, 'Cash'))),
             ],
             selected: {paymentMethod},
             onSelectionChanged: (value) => setState(() { paymentMethod = value.first; summary = null; }),
@@ -1331,8 +1356,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           TextFormField(
             initialValue: promotionCode,
             textCapitalization: TextCapitalization.characters,
-            decoration: const InputDecoration(
-              labelText: 'Promotion code (optional)',
+            decoration: InputDecoration(
+              labelText: localized(context, 'Promotion code (optional)'),
             ),
             onChanged: (value) {
               promotionCode = value;
@@ -1342,13 +1367,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           if (error != null) ...[
             const SizedBox(height: 16),
             Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            TextButton.icon(onPressed: _loadCheckoutData, icon: const Icon(Icons.refresh), label: const Text('Retry')),
+            TextButton.icon(onPressed: _loadCheckoutData, icon: const Icon(Icons.refresh), label: Text(localized(context, 'Retry'))),
           ],
           if (summary != null) ...[
             if (paymentMethod == 'card') ...[
               const SizedBox(height: 12),
-              const Text(
-                'Card payment processing is not available yet. The order will remain payment pending.',
+              Text(
+                localized(context, 'Card payment processing is not available yet. The order will remain payment pending.'),
               ),
             ],
             const SizedBox(height: 20),
@@ -1357,17 +1382,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Subtotal'), Text('${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')]),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Subtotal')), Text('${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')]),
                     if (summary!.discount > 0) ...[
                       const SizedBox(height: 8),
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Promotion${summary!.promotionCode == null ? '' : ' (${summary!.promotionCode})'}'), Text('-${summary!.currency} ${summary!.discount.toStringAsFixed(2)}')]),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('${localized(context, 'Promotion')}${summary!.promotionCode == null ? '' : ' (${summary!.promotionCode})'}'), Text('-${summary!.currency} ${summary!.discount.toStringAsFixed(2)}')]),
                     ],
                     const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Delivery'), Text('${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')]),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Delivery')), Text('${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')]),
                     const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Service fee'), Text('${summary!.currency} ${summary!.serviceFee.toStringAsFixed(2)}')]),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Service fee')), Text('${summary!.currency} ${summary!.serviceFee.toStringAsFixed(2)}')]),
                     const Divider(),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)), Text('${summary!.currency} ${summary!.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
+                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Total'), style: const TextStyle(fontWeight: FontWeight.bold)), Text('${summary!.currency} ${summary!.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
                   ],
                 ),
               ),
@@ -1382,7 +1407,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   : summary == null ? prepareCheckout : placeOrder,
               child: loading
                   ? const CircularProgressIndicator()
-                  : Text(summary == null ? 'Review order' : 'Place order'),
+                  : Text(localized(context, summary == null ? 'Review order' : 'Place order')),
             ),
           ),
         ],
@@ -1427,7 +1452,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(exception.toString())),
+          SnackBar(content: Text(localizedError(context, exception))),
         );
       }
     }
@@ -1440,7 +1465,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(exception.toString())),
+          SnackBar(content: Text(localizedError(context, exception))),
         );
       }
     }
@@ -1457,13 +1482,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       await _loadOrders();
       if (!mounted) return;
       final message = intent.checkoutUrl == null
-          ? 'Payment intent created by ${intent.provider}; no payment was taken and no provider checkout is configured.'
-          : 'Payment intent created. Continue through the provider checkout.';
+          ? localized(context, 'Payment intent created by {provider}; no payment was taken and no provider checkout is configured.', {'provider': intent.provider})
+          : localized(context, 'Payment intent created. Continue through the provider checkout.');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Payment could not be started: $exception')),
+          SnackBar(content: Text(localized(context, 'Payment could not be started: {error}', {'error': exception}))),
         );
       }
     } finally {
@@ -1484,18 +1509,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Delivery ${delivery.status.replaceAll('_', ' ')}',
+                Text(localized(context, 'Delivery {status}', {'status': localizedStatus(context, delivery.status)}),
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
-                Text('Tracking code: ${delivery.trackingCode}'),
-                Text('Estimated time: ${delivery.estimatedMinutes} minutes'),
+                Text(localized(context, 'Tracking code: {code}', {'code': delivery.trackingCode})),
+                Text(localized(context, 'Estimated time: {minutes} minutes', {'minutes': delivery.estimatedMinutes})),
                 const SizedBox(height: 12),
                 if (!delivery.trackingAvailable)
-                  const Text('Live driver tracking is not available yet.'),
+                  Text(localized(context, 'Live driver tracking is not available yet.')),
                 ...delivery.events.map((event) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.local_shipping_outlined),
-                      title: Text(event),
+                      title: Text(localized(context, event)),
                     )),
               ],
             ),
@@ -1505,7 +1530,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delivery information is unavailable: $exception')),
+          SnackBar(content: Text(localized(context, 'Delivery information is unavailable: {error}', {'error': exception}))),
         );
       }
     }
@@ -1521,7 +1546,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
         context: context,
         builder: (dialogContext) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Review a delivered product'),
+            title: Text(localized(context, 'Review a delivered product')),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1533,7 +1558,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   )).toList(),
                   onChanged: (value) => setDialogState(() => productId = value ?? productId),
                 ),
-                Text('Rating: $rating / 5'),
+                Text(localized(context, 'Rating: {rating} / 5', {'rating': rating})),
                 Slider(
                   value: rating.toDouble(),
                   min: 1,
@@ -1545,14 +1570,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 TextField(
                   controller: commentController,
                   maxLength: 1000,
-                  decoration: const InputDecoration(labelText: 'Comment (optional)'),
+                  decoration: InputDecoration(labelText: localized(context, 'Comment (optional)')),
                 ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
+                child: Text(localized(context, 'Cancel')),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(dialogContext, {
@@ -1560,7 +1585,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   'rating': rating,
                   'comment': commentController.text,
                 }),
-                child: const Text('Submit'),
+                child: Text(localized(context, 'Submit')),
               ),
             ],
           ),
@@ -1575,13 +1600,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Review submitted for moderation.')),
+          SnackBar(content: Text(localized(context, 'Review submitted for moderation.'))),
         );
       }
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Review could not be submitted: $exception')),
+          SnackBar(content: Text(localized(context, 'Review could not be submitted: {error}', {'error': exception}))),
         );
       }
     } finally {
@@ -1592,7 +1617,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Orders')),
+      appBar: AppBar(
+        title: Text(localized(context, 'Orders')),
+        actions: const [LanguageSwitch()],
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
@@ -1600,14 +1628,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(error!),
+                      Text(localizedError(context, error!)),
                       const SizedBox(height: 12),
-                      FilledButton(onPressed: _loadOrders, child: const Text('Retry')),
+                      FilledButton(onPressed: _loadOrders, child: Text(localized(context, 'Retry'))),
                     ],
                   ),
                 )
               : orders.isEmpty
-                  ? const Center(child: Text('You have no orders yet.'))
+                  ? Center(child: Text(localized(context, 'You have no orders yet.')))
                   : RefreshIndicator(
                       onRefresh: _loadOrders,
                       child: ListView.separated(
@@ -1627,8 +1655,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text('Order ${order.id.substring(0, 8)}'),
-                                      Chip(label: Text(order.status.replaceAll('_', ' '))),
+                                      Text(localized(context, 'Order {id}', {'id': order.id.substring(0, 8)})),
+                                      Chip(label: Text(localizedStatus(context, order.status))),
                                     ],
                                   ),
                                   Text('${order.address.label} · ${order.address.city}'),
@@ -1643,9 +1671,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     style: Theme.of(context).textTheme.titleMedium,
                                   ),
                                   if (order.status == 'payment_pending')
-                                    const Padding(
+                                    Padding(
                                       padding: EdgeInsets.only(top: 8),
-                                      child: Text('Payment has not been processed.'),
+                                      child: Text(localized(context, 'Payment has not been processed.')),
                                     ),
                                   const SizedBox(height: 8),
                                   Wrap(
@@ -1654,37 +1682,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       OutlinedButton.icon(
                                         onPressed: () => _reorder(order),
                                         icon: const Icon(Icons.replay),
-                                        label: const Text('Reorder'),
+                                        label: Text(localized(context, 'Reorder')),
                                       ),
                                       OutlinedButton.icon(
                                         onPressed: () => _showDelivery(order),
                                         icon: const Icon(Icons.local_shipping_outlined),
-                                        label: const Text('Delivery'),
+                                        label: Text(localized(context, 'Delivery')),
                                       ),
                                       if (order.deliveryStatus == 'delivered')
                                         OutlinedButton.icon(
                                           onPressed: () => _reviewOrder(order),
                                           icon: const Icon(Icons.star_outline),
-                                          label: const Text('Review product'),
+                                          label: Text(localized(context, 'Review product')),
                                         ),
                                       if (canCancel && order.paymentStatus != 'pending')
                                         TextButton.icon(
                                           onPressed: () => _cancelOrder(order),
                                           icon: const Icon(Icons.cancel_outlined),
-                                          label: const Text('Cancel'),
+                                          label: Text(localized(context, 'Cancel')),
                                         ),
                                       if (order.status == 'payment_pending' &&
                                           order.paymentMethod == 'card') ...[
                                         if (order.paymentStatus == 'pending')
-                                          const Chip(label: Text('Payment in progress'))
+                                          Chip(label: Text(localized(context, 'Payment in progress')))
                                         else
                                           FilledButton.tonal(
                                             onPressed: _startingPayments.contains(order.id)
                                                 ? null
                                                 : () => _startPayment(order),
                                             child: Text(_startingPayments.contains(order.id)
-                                                ? 'Starting...'
-                                                : 'Start payment'),
+                                                ? localized(context, 'Starting...')
+                                                    : localized(context, 'Start payment')),
                                           ),
                                       ],
                                     ],
@@ -1735,7 +1763,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update notification: $exception')),
+          SnackBar(content: Text(localized(context, 'Could not update notification: {error}', {'error': exception}))),
         );
       }
     }
@@ -1744,7 +1772,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(
+        title: Text(localized(context, 'Notifications')),
+        actions: const [LanguageSwitch()],
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
@@ -1752,14 +1783,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(error!),
+                      Text(localizedError(context, error!)),
                       const SizedBox(height: 12),
-                      FilledButton(onPressed: _load, child: const Text('Retry')),
+                      FilledButton(onPressed: _load, child: Text(localized(context, 'Retry'))),
                     ],
                   ),
                 )
               : items.isEmpty
-                  ? const Center(child: Text('No notifications yet.'))
+                  ? Center(child: Text(localized(context, 'No notifications yet.')))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.separated(
@@ -1771,12 +1802,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             leading: Icon(item.isRead
                                 ? Icons.notifications_none
                                 : Icons.notifications_active_outlined),
-                            title: Text(item.title),
-                            subtitle: Text(item.body),
+                            title: Text(localized(context, item.title)),
+                            subtitle: Text(localized(context, item.body)),
                             trailing: item.isRead
                                 ? null
                                 : IconButton(
-                                    tooltip: 'Mark as read',
+                                    tooltip: localized(context, 'Mark as read'),
                                     onPressed: () => _markRead(item),
                                     icon: const Icon(Icons.done),
                                   ),

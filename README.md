@@ -38,6 +38,12 @@ management; payment capture and delivery dispatch remain unavailable.
 Customers can submit product reviews only for delivered purchases. Reviews
 remain hidden until administrator moderation.
 
+English/Arabic localization is in progress across the mobile client and admin
+portal. The admin dashboard now has persisted language selection and RTL
+layout; the mobile app has persisted language selection, translated customer
+copy, and Arabic RTL. See `ROADMAP.md` for remaining localization acceptance
+work and `CODE_COMPLETION_PLAN.md` for the application completion queue.
+
 Backend and admin containers have production-oriented build stages, but Docker
 runtime and PostgreSQL 16 deployment verification have not been run in this
 environment.
@@ -71,3 +77,7 @@ The platform is a production-grade commerce and delivery solution for water prod
 ## Development
 
 See `DEVELOPMENT.md` for setup steps.
+See [`ROADMAP.md`](./ROADMAP.md) for the sprint-by-sprint implementation audit,
+verified status, and remaining production readiness work. See
+[`CODE_COMPLETION_PLAN.md`](./CODE_COMPLETION_PLAN.md) for prioritized
+application-code gaps and deferred provider/infrastructure tasks.

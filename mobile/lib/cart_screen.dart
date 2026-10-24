@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
 import 'api_config.dart';
+import 'localization.dart';
 
 class CartState {
   const CartState({
@@ -159,18 +160,21 @@ class _CartScreenState extends ConsumerState<CartScreen> {
 
     if (state.error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Cart')),
+        appBar: AppBar(
+          title: Text(localized(context, 'Cart')),
+          actions: const [LanguageSwitch()],
+        ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.error_outline_rounded, size: 42),
               const SizedBox(height: 12),
-              Text(state.error!),
+              Text(localizedError(context, state.error!)),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => ref.read(cartProvider.notifier).loadCart(),
-                child: const Text('Retry'),
+                child: Text(localized(context, 'Retry')),
               ),
             ],
           ),
@@ -180,16 +184,19 @@ class _CartScreenState extends ConsumerState<CartScreen> {
 
     if (state.items.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Cart')),
-        body: const Center(
+        appBar: AppBar(
+          title: Text(localized(context, 'Cart')),
+          actions: const [LanguageSwitch()],
+        ),
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.shopping_cart_outlined, size: 52),
               SizedBox(height: 12),
-              Text('Your cart is empty'),
+              Text(localized(context, 'Your cart is empty')),
               SizedBox(height: 6),
-              Text('Add bottled water and bulk packs to begin'),
+              Text(localized(context, 'Add bottled water and bulk packs to begin')),
             ],
           ),
         ),
@@ -197,7 +204,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Cart')),
+      appBar: AppBar(
+        title: Text(localized(context, 'Cart')),
+        actions: const [LanguageSwitch()],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -213,7 +223,10 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                       child: Icon(Icons.local_drink_rounded),
                     ),
                     title: Text(item.name),
-                    subtitle: Text('Qty ${item.quantity} • SAR ${item.unitPrice.toStringAsFixed(2)}'),
+                    subtitle: Text(localized(context, 'Qty {quantity} • SAR {price}', {
+                      'quantity': item.quantity,
+                      'price': item.unitPrice.toStringAsFixed(2),
+                    })),
                     trailing: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -221,14 +234,14 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                         Text('SAR ${(item.unitPrice * item.quantity).toStringAsFixed(2)}'),
                         IconButton(
                           icon: const Icon(Icons.delete_outline),
-                          tooltip: 'Remove item',
+                          tooltip: localized(context, 'Remove item'),
                           onPressed: () async {
                             try {
                               await ref.read(cartProvider.notifier).removeItem(item.productId);
                             } catch (error) {
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(error.toString())),
+                                  SnackBar(content: Text(localizedError(context, error))),
                                 );
                               }
                             }
@@ -248,7 +261,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Subtotal'),
+                        Text(localized(context, 'Subtotal')),
                         Text('SAR ${state.subtotal.toStringAsFixed(2)}'),
                       ],
                     ),
@@ -256,7 +269,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Discount'),
+                        Text(localized(context, 'Discount')),
                         Text('-SAR ${state.discount.toStringAsFixed(2)}'),
                       ],
                     ),
@@ -264,7 +277,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Total', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text(localized(context, 'Total'), style: const TextStyle(fontWeight: FontWeight.bold)),
                         Text('SAR ${state.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
@@ -273,7 +286,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: () => context.go('/checkout'),
-                        child: const Text('Proceed to checkout'),
+                        child: Text(localized(context, 'Proceed to checkout')),
                       ),
                     ),
                   ],

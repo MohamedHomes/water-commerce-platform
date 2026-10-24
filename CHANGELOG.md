@@ -162,11 +162,11 @@
   retaining localhost/emulator defaults for development
 - updated the Android application label and release setup documentation
 - store credentials and store submission remain unconfigured
-- current workspace verification: Flutter analysis passed and all 6 Flutter
-  tests passed; Android debug APK build is blocked because the available JDK is
-  Java 11 while the configured Gradle requires Java 17 or later
-- Android release build and signing gate remain unverified until a compatible
-  JDK and operator-managed signing configuration are available
+- current workspace verification at that checkpoint: Flutter analysis passed
+  and all 6 Flutter tests passed; an Android debug build failed because Flutter
+  selected Java 11 while the configured Gradle requires Java 17 or later
+- Android release build and signing gate remained unverified pending a
+  compatible JDK and operator-managed signing configuration
 
 ## Stabilization update - 2026-10-24
 
@@ -182,11 +182,57 @@
 - verified backend build (exit 0), all 11 backend suites and 27 tests (exit 0),
   admin production build (exit 0), admin lint (exit 0), Flutter analysis (exit
   0), and all 6 Flutter tests (exit 0)
-- Android debug build remains blocked (exit 1): Android Studio's bundled Java
-  and the selected Java runtime are 11.0.10, while the wrapper is Gradle 9.3.1
-  and requires Java 17 or later; Android command-line tools and license
-  acceptance are also missing
+- the earlier Android debug build attempt failed because Flutter selected Java
+  11.0.10 while the wrapper is Gradle 9.3.1 and requires Java 17 or later;
+  the audit below reconfigured Flutter to use the installed JDK 17
 - PGlite validation does not verify the deployed PostgreSQL 16 configuration;
-  PostgreSQL 16 and Docker runtime checks remain deferred
+  PostgreSQL 16 and Docker runtime checks remain unverified
 - the repository documents no sprint after Sprint 18 and provides no next-sprint
   acceptance criteria; no unnumbered feature work or invented sprint was started
+- added [ROADMAP.md](./ROADMAP.md) with an evidence-based audit of the 19
+  requested Sprint 0–18 slots; Sprints 1–5 are explicitly marked inferred
+  because their original criteria are absent, and Sprint 19 is only a proposal
+  pending approval
+- current checkout is clean at audit start on `main` (`e9aa918`); full backend
+  build and 11 suites/27 tests, admin build/lint, and Flutter analysis/6 tests
+  all passed again
+- verified `C:\\Program Files\\Java\\jdk-17` contains Java and javac 17.0.11,
+  configured Flutter to select it, and confirmed Gradle proceeds past its Java
+  requirement; the Android debug build then failed with `There is not enough
+  space on the disk` while installing NDK 28.2.13676358
+- removed only the incomplete NDK staging directory and installer marker
+  created by that failed build; C: now has about 4.99 GB free. Android
+  command-line tools are still missing and license status remains unknown.
+- regenerated the consolidated SQL twice with identical hashes; PGlite
+  execution, ledger comparison, and runner skip behavior pass in the backend
+  suite. PostgreSQL 16 and Docker runtime remain unverified.
+- `docker compose config` passed (exit 0) with an obsolete `version` attribute
+  warning; `docker info` confirmed that the Docker Desktop Linux engine is not
+  running/reachable, so image/runtime tests could not run.
+
+### Sprint 19 - Bilingual application experience (in progress)
+
+- added an admin language selector with localStorage persistence, translated
+  first-party operations/authentication copy and common API validation errors,
+  localized known order/payment/delivery/inventory statuses, locale-aware order
+  dates, and document `lang`/`dir` updates with RTL-aware table/form styles
+- added a Flutter locale controller persisted through secure storage and an
+  English/Arabic selector on the customer app's main screens; Arabic applies
+  Flutter's RTL localization delegates
+- translated mobile authentication/address/checkout/cart/order/review/payment/
+  delivery/notification labels, validation, known status values, and the
+  platform's current in-app notification/event text; verified all 103 literal
+  `localized(...)` call keys have Arabic entries
+- added mobile tests for saved-language restoration, language updates, Arabic
+  translation, and RTL/LTR direction; added admin localization/persistence/
+  direction/error-format unit tests
+- no backend API, database schema, or business behavior changed; product and
+  customer-provided names/content are not yet bilingual data, and unknown
+  server-provided messages remain in their source language
+- current validation: backend build passed; all 11 backend suites and 27 tests
+  passed; admin build and lint passed; 3 admin localization tests passed;
+  Flutter analysis passed and all 9 mobile tests passed
+- Sprint 19 remains incomplete pending bilingual catalog data/content review,
+  exhaustive dynamic/API error coverage, and Arabic/RTL device/accessibility
+  review. Android SDK/build and deployed PostgreSQL 16/Docker checks remain
+  deferred/unverified.
