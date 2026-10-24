@@ -67,6 +67,33 @@ customers and then explicitly elevated by a trusted database operator; public
 registration cannot assign the admin role. Sign in through the portal with
 that account.
 
+### Local administrator bootstrap
+
+There is no default administrator account or administrator password. Register a
+dedicated local account through the supported customer registration flow, then
+have a trusted local database operator promote only that exact account:
+
+```powershell
+psql -h 127.0.0.1 -p 5432 -U postgres -d aquaflow
+```
+
+`psql` prompts for the database password. In its interactive session, run the
+following statements, substituting the email address used for that registration:
+
+```sql
+BEGIN;
+UPDATE customers
+SET role = 'admin'
+WHERE email = lower('operator-chosen-local-email@example.test')
+  AND role = 'customer'
+RETURNING role;
+```
+
+Commit only if the update returns exactly one row with role `admin`; otherwise
+roll back. Then sign in at the Admin portal using that account's chosen
+credentials. Do not add role assignment to public registration or commit local
+credentials. Admin API routes independently verify the current database role.
+
 PGlite-backed integration tests currently execute the ordered migrations and
 exercise persistence behavior. They do not replace verification against the
 deployed PostgreSQL 16 configuration; see [DEPLOYMENT.md](./DEPLOYMENT.md)
