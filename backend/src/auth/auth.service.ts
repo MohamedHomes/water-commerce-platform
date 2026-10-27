@@ -1,28 +1,12 @@
-import {
-    BadRequestException,
-    Injectable,
-    UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import {
-    IsEmail,
-    IsNotEmpty,
-    IsOptional,
-    IsString,
-    Matches,
-    MinLength,
-} from 'class-validator';
-import * as bcrypt from 'bcryptjs';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
-import {
-    JWT_EXPIRES_IN,
-    JWT_SECRET,
-    JWT_REFRESH_SECRET,
-    REFRESH_TOKEN_TTL,
-} from './auth.constants';
+import { JWT_EXPIRES_IN, JWT_SECRET, JWT_REFRESH_SECRET, REFRESH_TOKEN_TTL } from './auth.constants';
+import { hashPassword, verifyPassword } from './password-hasher';
 
 export type CustomerRole = 'customer' | 'admin';
 
@@ -115,7 +99,7 @@ export class UpdateCustomerProfileDto {
 
 @Injectable()
 export class AuthService {
-    constructor(private readonly database: DatabaseService) { }
+    constructor(private readonly database: DatabaseService) {}
 
     async register(dto: RegisterCustomerDto) {
         if (!dto.email || !dto.password || !dto.firstName || !dto.lastName) {
@@ -124,7 +108,7 @@ export class AuthService {
 
         const email = dto.email.trim().toLowerCase();
         const now = new Date();
-        const passwordHash = await bcrypt.hash(dto.password, 10);
+        const passwordHash = await hashPassword(dto.password);
         const id = randomUUID();
         let result;
         try {
@@ -162,7 +146,7 @@ export class AuthService {
             [email],
         );
         const row = result.rows[0];
-        if (!row || !(await bcrypt.compare(dto.password, row.password_hash))) {
+        if (!row || !(await verifyPassword(dto.password, row.password_hash))) {
             throw new UnauthorizedException('Invalid email or password');
         }
 
@@ -263,9 +247,14 @@ export class AuthService {
     }
 
     private isUniqueViolation(error: unknown, constraint: string) {
-        return typeof error === 'object' && error !== null
-            && 'code' in error && error.code === '23505'
-            && 'constraint' in error && error.constraint === constraint;
+        return (
+            typeof error === 'object' &&
+            error !== null &&
+            'code' in error &&
+            error.code === '23505' &&
+            'constraint' in error &&
+            error.constraint === constraint
+        );
     }
 
     private issueAccessToken(customer: CustomerRecord) {

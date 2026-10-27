@@ -30,6 +30,7 @@ async function bootstrap() {
             callback(new Error('CORS origin is not allowed'), false);
         },
         credentials: true,
+        exposedHeaders: ['Retry-After'],
     });
 
     const port = Number(process.env.PORT || 3000);

@@ -46,13 +46,20 @@ describe('Admin operations', () => {
             .expect(403);
 
         const database = app.get(DatabaseService);
-        await database.query(
-            "UPDATE customers SET role = 'admin' WHERE id = $1",
-            [account.id],
-        );
+        await database.query("UPDATE customers SET role = 'admin' WHERE id = $1", [account.id]);
+        await request(app.getHttpServer())
+            .post('/api/v1/auth/login')
+            .send({
+                email: 'admin-operations@example.com',
+                password: 'WrongPass123!',
+            })
+            .expect(401);
         const login = await request(app.getHttpServer())
             .post('/api/v1/auth/login')
-            .send({ email: 'admin-operations@example.com', password: 'StrongPass123!' })
+            .send({
+                email: 'admin-operations@example.com',
+                password: 'StrongPass123!',
+            })
             .expect(201);
         const adminToken = login.body.accessToken as string;
         expect(login.body.customer.role).toBe('admin');
@@ -108,9 +115,7 @@ describe('Admin operations', () => {
             .get('/api/v1/admin/promotions')
             .set('Authorization', `Bearer ${adminToken}`)
             .expect(200);
-        expect(promotions.body.items).toContainEqual(
-            expect.objectContaining({ code: 'ADMIN10', is_active: false }),
-        );
+        expect(promotions.body.items).toContainEqual(expect.objectContaining({ code: 'ADMIN10', is_active: false }));
 
         const audits = await database.query<{ count: string }>(
             'SELECT COUNT(*)::text AS count FROM admin_audit_logs WHERE admin_customer_id = $1',
@@ -127,7 +132,10 @@ describe('Admin operations', () => {
             .set('Authorization', `Bearer ${adminToken}`)
             .expect(200);
         expect(inventory.body.items).toContainEqual(
-            expect.objectContaining({ id: 'prod-1', quantity: originalStock.rows[0].quantity }),
+            expect.objectContaining({
+                id: 'prod-1',
+                quantity: originalStock.rows[0].quantity,
+            }),
         );
         await request(app.getHttpServer())
             .post('/api/v1/admin/inventory/prod-1/adjustments')
@@ -149,20 +157,26 @@ describe('Admin operations', () => {
             .get('/api/v1/admin/products')
             .set('Authorization', `Bearer ${adminToken}`)
             .expect(200);
-        expect(products.body.items).toContainEqual(
-            expect.objectContaining({ id: 'prod-1', name: expect.any(String) }),
-        );
+        expect(products.body.items).toContainEqual(expect.objectContaining({ id: 'prod-1', name: expect.any(String) }));
         const productUpdate = await request(app.getHttpServer())
             .patch('/api/v1/admin/products/prod-1')
             .set('Authorization', `Bearer ${adminToken}`)
             .send({ price: 5.75, isActive: false })
             .expect(200);
-        expect(productUpdate.body).toMatchObject({ id: 'prod-1', price: 5.75, is_active: false });
+        expect(productUpdate.body).toMatchObject({
+            id: 'prod-1',
+            price: 5.75,
+            is_active: false,
+        });
 
         const category = await request(app.getHttpServer())
             .post('/api/v1/admin/categories')
             .set('Authorization', `Bearer ${adminToken}`)
-            .send({ name: 'Test category', nameAr: 'فئة اختبار', slug: 'test-category' })
+            .send({
+                name: 'Test category',
+                nameAr: 'فئة اختبار',
+                slug: 'test-category',
+            })
             .expect(201);
         const brand = await request(app.getHttpServer())
             .post('/api/v1/admin/brands')
@@ -237,10 +251,7 @@ describe('Admin operations', () => {
             })
             .expect(409);
 
-        await database.query(
-            "UPDATE customers SET role = 'customer' WHERE id = $1",
-            [account.id],
-        );
+        await database.query("UPDATE customers SET role = 'customer' WHERE id = $1", [account.id]);
         await request(app.getHttpServer())
             .get('/api/v1/admin/dashboard')
             .set('Authorization', `Bearer ${adminToken}`)

@@ -94,6 +94,28 @@ roll back. Then sign in at the Admin portal using that account's chosen
 credentials. Do not add role assignment to public registration or commit local
 credentials. Admin API routes independently verify the current database role.
 
+### Resetting an existing local administrator password
+
+The repository does not define a default password or password seed for
+`admin@aquaflow.local`. If that account exists in the local development
+database but its password is unknown, reset it interactively from the
+`backend/` directory:
+
+```powershell
+npm run build
+npm run admin:reset-local-password
+```
+
+The script requires an interactive terminal, explicitly confirms the exact
+account, prompts for the new password twice without echoing it, and applies the
+same bcrypt hashing helper and password policy used by registration/login.
+It refuses `NODE_ENV=production`, any database other than `aquaflow` on
+`127.0.0.1:5432`, and any account that is missing or does not already have
+role `admin`. It updates only `password_hash` and `updated_at`; the existing
+role is preserved. The password/hash are not printed. Restart the backend
+after rebuilding so the running service uses the current code. This tool is
+for explicitly requested local recovery, not production password management.
+
 PGlite-backed integration tests currently execute the ordered migrations and
 exercise persistence behavior. They do not replace verification against the
 deployed PostgreSQL 16 configuration; see [DEPLOYMENT.md](./DEPLOYMENT.md)
