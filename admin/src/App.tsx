@@ -1,4 +1,6 @@
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { AdminLayout } from './AdminLayout';
+import { isAdminPath, normalizeAdminPath, pageTitleKey } from './admin-routes';
 import {
     AdminLanguage,
     AdminMessage,
@@ -24,6 +26,7 @@ interface Dashboard {
 
 interface AdminOrder {
     id: string;
+    customerId: string;
     status: string;
     paymentMethod: string;
     total: number;
@@ -85,6 +88,34 @@ interface CatalogProduct {
     brand_name: string;
 }
 
+interface ProductForm {
+    name: string;
+    nameAr: string;
+    slug: string;
+    description: string;
+    descriptionAr: string;
+    categoryId: string;
+    brandId: string;
+    price: string;
+    quantity: string;
+    packageSize: string;
+}
+
+function emptyProductForm(): ProductForm {
+    return {
+        name: '',
+        nameAr: '',
+        slug: '',
+        description: '',
+        descriptionAr: '',
+        categoryId: '',
+        brandId: '',
+        price: '',
+        quantity: '0',
+        packageSize: '',
+    };
+}
+
 interface CatalogTerm {
     id: string;
     name: string;
@@ -132,6 +163,7 @@ async function apiRequest<T>(path: string, token: string, options: RequestInit =
 
 function App() {
     const [language, setLanguage] = useState<AdminLanguage>(() => loadAdminLanguage((key) => localStorage.getItem(key)));
+    const [pathname, setPathname] = useState(() => normalizeAdminPath(window.location.pathname));
     const t = useCallback((key: AdminMessage) => translate(language, key), [language]);
     const format = useCallback(
         (key: AdminMessage, values: Record<string, string | number>) => formatMessage(language, key, values),
@@ -150,11 +182,25 @@ function App() {
         },
         [format, language, t],
     );
-    const [token, setToken] = useState('');
+    const [token, setToken] = useState(() => sessionStorage.getItem('aquaflow-admin-token') ?? '');
+    const [administrator, setAdministrator] = useState(() => sessionStorage.getItem('aquaflow-admin-email') ?? '');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [dashboard, setDashboard] = useState<Dashboard | null>(null);
     const [orders, setOrders] = useState<AdminOrder[]>([]);
+    const [ordersPage, setOrdersPage] = useState(1);
+    const [productsPage, setProductsPage] = useState(1);
+    const [ordersTotal, setOrdersTotal] = useState(0);
+    const [orderStatus, setOrderStatus] = useState('');
+    const [search, setSearch] = useState('');
+    const [expandedOrder, setExpandedOrder] = useState('');
+    const [productActivity, setProductActivity] = useState('');
+    const [productCategory, setProductCategory] = useState('');
+    const [productBrand, setProductBrand] = useState('');
+    const [productSort, setProductSort] = useState('name');
+    const [productPageSize, setProductPageSize] = useState(20);
+    const [promotionActivity, setPromotionActivity] = useState('');
+    const [deliveryStatus, setDeliveryStatus] = useState('');
     const [promotions, setPromotions] = useState<Promotion[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
@@ -169,66 +215,193 @@ function App() {
         description?: string;
         descriptionAr?: string;
     }>>({});
-    const [productEdits, setProductEdits] = useState<Record<string, {
-        name?: string;
-        nameAr?: string;
-        slug?: string;
-        description?: string;
-        descriptionAr?: string;
-        categoryId?: string;
-        brandId?: string;
-    }>>({});
-    const [newProduct, setNewProduct] = useState({
-        name: '', nameAr: '', slug: '', description: '', descriptionAr: '',
-        categoryId: '', brandId: '', price: '', quantity: '0', packageSize: '',
-    });
+    const [productDialog, setProductDialog] = useState<'create' | 'edit' | null>(null);
+    const [editingProduct, setEditingProduct] = useState<CatalogProduct | null>(null);
+    const [productForm, setProductForm] = useState<ProductForm>(emptyProductForm);
+    const [productFormInitial, setProductFormInitial] = useState<ProductForm>(emptyProductForm);
     const [newCategory, setNewCategory] = useState({ name: '', nameAr: '', slug: '', description: '', descriptionAr: '' });
     const [newBrand, setNewBrand] = useState({ name: '', nameAr: '', slug: '', description: '', descriptionAr: '' });
-    const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
     const [code, setCode] = useState('');
     const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
     const [discountValue, setDiscountValue] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
     const loginInFlight = useRef(false);
+    const pageTitle = t(pageTitleKey(pathname));
+    const orderPageCount = Math.max(1, Math.ceil(ordersTotal / 20));
+    const safeOrdersPage = Math.min(ordersPage, orderPageCount);
+    const searchTerm = search.trim().toLowerCase();
+    const filteredOrders = orders.filter((order) =>
+        `${order.id} ${order.customerId} ${order.status} ${order.paymentMethod}`.toLowerCase().includes(searchTerm));
+    const filteredProducts = products.filter((product) =>
+        `${product.name} ${product.name_ar ?? ''} ${product.slug} ${product.category_name} ${product.brand_name}`.toLowerCase().includes(searchTerm)
+        && (!productActivity || product.is_active === (productActivity === 'active'))
+        && (!productCategory || product.category_id === productCategory)
+        && (!productBrand || product.brand_id === productBrand))
+        .sort((left, right) => {
+            if (productSort === 'price-asc') return left.price - right.price;
+            if (productSort === 'price-desc') return right.price - left.price;
+            if (productSort === 'stock-asc') return left.quantity - right.quantity;
+            if (productSort === 'stock-desc') return right.quantity - left.quantity;
+            if (productSort === 'stock-desc') return right.quantity - left.quantity;
+            return left.name.localeCompare(right.name);
+        });
+    const productPageCount = Math.max(1, Math.ceil(filteredProducts.length / productPageSize));
+    const safeProductsPage = Math.min(productsPage, productPageCount);
+    const visibleProducts = filteredProducts.slice((safeProductsPage - 1) * productPageSize, safeProductsPage * productPageSize);
+    const productFormChanged = JSON.stringify(productForm) !== JSON.stringify(productFormInitial);
+    const filteredPromotions = promotions.filter((promotion) =>
+        promotion.code.toLowerCase().includes(searchTerm)
+        && (!promotionActivity || promotion.is_active === (promotionActivity === 'active')));
+    const filteredInventory = inventory.filter((item) =>
+        `${item.name} ${products.find((product) => product.id === item.id)?.name_ar ?? ''}`.toLowerCase().includes(searchTerm));
+    const filteredDeliveries = deliveries.filter((delivery) =>
+        `${delivery.order_id} ${delivery.status}`.toLowerCase().includes(searchTerm)
+        && (!deliveryStatus || delivery.status === deliveryStatus));
+    const filteredReviews = reviews.filter((review) =>
+        `${review.product_name} ${review.product_name_ar ?? ''} ${review.comment ?? ''}`.toLowerCase().includes(searchTerm));
+
+    useEffect(() => {
+        function handlePopState() {
+            setPathname(normalizeAdminPath(window.location.pathname));
+            setSearch('');
+        }
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    function navigate(path: string) {
+        const nextPath = normalizeAdminPath(path);
+        if (nextPath === pathname) return;
+        window.history.pushState({}, '', nextPath);
+        setPathname(nextPath);
+        setSearch('');
+        setError('');
+        setSuccess('');
+        if (nextPath !== '/orders') {
+            setOrdersPage(1);
+            setOrderStatus('');
+        }
+    }
+
+    function signOut() {
+        sessionStorage.removeItem('aquaflow-admin-token');
+        sessionStorage.removeItem('aquaflow-admin-email');
+        setToken('');
+        setAdministrator('');
+        setError('');
+        setSuccess('');
+        setDashboard(null);
+        setOrders([]);
+        setPromotions([]);
+        setInventory([]);
+        setDeliveries([]);
+        setReviews([]);
+        setProducts([]);
+        setCategories([]);
+        setBrands([]);
+        navigate('/');
+    }
 
     useEffect(() => {
         syncAdminLanguage(language, (key, value) => localStorage.setItem(key, value), document.documentElement);
     }, [language]);
 
-    const refreshDashboard = useCallback(async (accessToken: string) => {
+    const refreshPage = useCallback(async (accessToken: string, page = pathname): Promise<boolean> => {
         setLoading(true);
         setError('');
+        setSuccess('');
         try {
-            const [metrics, orderList, promotionList, inventoryList, deliveryList, reviewList, productList, catalogTerms] = await Promise.all([
-                apiRequest<Dashboard>('/admin/dashboard', accessToken),
-                apiRequest<{ items: AdminOrder[] }>('/admin/orders?limit=10', accessToken),
-                apiRequest<{ items: Promotion[] }>('/admin/promotions', accessToken),
-                apiRequest<{ items: InventoryItem[] }>('/admin/inventory', accessToken),
-                apiRequest<{ items: DeliveryItem[] }>('/admin/deliveries', accessToken),
-                apiRequest<{ items: ProductReview[] }>('/admin/reviews', accessToken),
-                apiRequest<{ items: CatalogProduct[] }>('/admin/products', accessToken),
-                apiRequest<{ categories: CatalogTerm[]; brands: CatalogTerm[] }>('/admin/catalog-terms', accessToken),
-            ]);
-            setDashboard(metrics);
-            setOrders(orderList.items);
-            setPromotions(promotionList.items);
-            setInventory(inventoryList.items);
-            setDeliveries(deliveryList.items);
-            setReviews(reviewList.items);
-            setProducts(productList.items);
-            setCategories(catalogTerms.categories);
-            setBrands(catalogTerms.brands);
+            const route = normalizeAdminPath(page);
+            if (route === '/') {
+                const [metrics, orderList] = await Promise.all([
+                    apiRequest<Dashboard>('/admin/dashboard', accessToken),
+                    apiRequest<{ items: AdminOrder[] }>('/admin/orders?limit=10', accessToken),
+                ]);
+                setDashboard(metrics);
+                setOrders(orderList.items);
+            } else if (route === '/orders') {
+                const params = new URLSearchParams({ page: String(safeOrdersPage), limit: '20' });
+                if (orderStatus) params.set('status', orderStatus);
+                const orderList = await apiRequest<{ items: AdminOrder[]; total: number; page: number }>(
+                    `/admin/orders?${params.toString()}`,
+                    accessToken,
+                );
+                setOrders(orderList.items);
+                setOrdersTotal(orderList.total);
+                if (orderList.page !== ordersPage) setOrdersPage(orderList.page);
+            } else if (route === '/products') {
+                const [productList, terms] = await Promise.all([
+                    apiRequest<{ items: CatalogProduct[] }>('/admin/products', accessToken),
+                    apiRequest<{ categories: CatalogTerm[]; brands: CatalogTerm[] }>('/admin/catalog-terms', accessToken),
+                ]);
+                setProducts(productList.items);
+                setCategories(terms.categories);
+                setBrands(terms.brands);
+            } else if (route === '/categories' || route === '/brands' || route === '/catalog-terms') {
+                const terms = await apiRequest<{ categories: CatalogTerm[]; brands: CatalogTerm[] }>(
+                    '/admin/catalog-terms',
+                    accessToken,
+                );
+                setCategories(terms.categories);
+                setBrands(terms.brands);
+            } else if (route === '/promotions') {
+                const result = await apiRequest<{ items: Promotion[] }>('/admin/promotions', accessToken);
+                setPromotions(result.items);
+            } else if (route === '/inventory') {
+                const result = await apiRequest<{ items: InventoryItem[] }>('/admin/inventory', accessToken);
+                setInventory(result.items);
+            } else if (route === '/deliveries') {
+                const result = await apiRequest<{ items: DeliveryItem[] }>('/admin/deliveries', accessToken);
+                setDeliveries(result.items);
+            } else if (route === '/reviews') {
+                const result = await apiRequest<{ items: ProductReview[] }>('/admin/reviews', accessToken);
+                setReviews(result.items);
+            }
+            return true;
         } catch (requestError) {
+            if (requestError instanceof ApiRequestError && requestError.status === 401) {
+                setEmail(administrator);
+                sessionStorage.removeItem('aquaflow-admin-token');
+                sessionStorage.removeItem('aquaflow-admin-email');
+                setToken('');
+                setAdministrator('');
+            }
             setError(errorMessage(requestError, 'requestFailed'));
+            return false;
         } finally {
             setLoading(false);
         }
-    }, [errorMessage]);
+    }, [administrator, errorMessage, orderStatus, ordersPage, pathname, safeOrdersPage]);
+
+    async function runMutation(fallback: AdminMessage, action: () => Promise<void>): Promise<boolean> {
+        if (!token || loading) return false;
+        setLoading(true);
+        setError('');
+        setSuccess('');
+        try {
+            await action();
+            if (await refreshPage(token)) setSuccess(t('savedSuccessfully'));
+            return true;
+        } catch (requestError) {
+            if (requestError instanceof ApiRequestError && requestError.status === 401) {
+                setEmail(administrator);
+                sessionStorage.removeItem('aquaflow-admin-token');
+                sessionStorage.removeItem('aquaflow-admin-email');
+                setToken('');
+                setAdministrator('');
+            }
+            setError(errorMessage(requestError, fallback));
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }
 
     useEffect(() => {
-        if (token) void refreshDashboard(token);
-    }, [token, refreshDashboard]);
+        if (token && isAdminPath(pathname)) void refreshPage(token, pathname);
+    }, [token, pathname, orderStatus, ordersPage, refreshPage]);
 
     async function login(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -252,6 +425,9 @@ function App() {
                 );
             }
             if (payload.customer.role !== 'admin') throw new Error(t('notAuthorized'));
+            sessionStorage.setItem('aquaflow-admin-token', payload.accessToken);
+            sessionStorage.setItem('aquaflow-admin-email', email);
+            setAdministrator(email);
             setToken(payload.accessToken);
             setPassword('');
         } catch (requestError) {
@@ -264,8 +440,7 @@ function App() {
 
     async function createPromotion(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
-        if (!token) return;
-        try {
+        await runMutation('promotionCreated', async () => {
             await apiRequest('/admin/promotions', token, {
                 method: 'POST',
                 body: JSON.stringify({
@@ -276,41 +451,36 @@ function App() {
             });
             setCode('');
             setDiscountValue('');
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'promotionCreated'));
-        }
+        });
     }
 
     async function togglePromotion(promotion: Promotion) {
-        if (!token) return;
-        try {
+        if (promotion.is_active && !window.confirm(t('confirmDisablePromotion'))) return;
+        await runMutation('promotionUpdated', async () => {
             await apiRequest(`/admin/promotions/${promotion.id}/active`, token, {
                 method: 'PATCH',
                 body: JSON.stringify({ isActive: !promotion.is_active }),
             });
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'promotionUpdated'));
-        }
+        });
     }
 
     async function adjustInventory(item: InventoryItem, quantityDelta: number) {
-        if (!token) return;
-        try {
+        if (!Number.isInteger(quantityDelta) || quantityDelta === 0) return;
+        if (!window.confirm(format('confirmInventoryAdjustment', {
+            delta: quantityDelta,
+            product: displayName(item.name, products.find((product) => product.id === item.id)?.name_ar),
+        }))) return;
+        await runMutation('inventoryUpdated', async () => {
             await apiRequest(`/admin/inventory/${encodeURIComponent(item.id)}/adjustments`, token, {
                 method: 'POST',
                 body: JSON.stringify({ quantityDelta }),
             });
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'inventoryUpdated'));
-        }
+        });
     }
 
     async function updateDelivery(delivery: DeliveryItem, status: string) {
-        if (!token) return;
-        try {
+        if (!window.confirm(format('confirmDeliveryTransition', { status: translateStatus(language, status) }))) return;
+        await runMutation('deliveryUpdated', async () => {
             await apiRequest(`/admin/deliveries/${delivery.id}/status`, token, {
                 method: 'PATCH',
                 body: JSON.stringify({
@@ -318,69 +488,123 @@ function App() {
                     note: `Operations updated status to ${status}`,
                 }),
             });
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'deliveryUpdated'));
-        }
+        });
     }
 
     async function moderateReview(review: ProductReview, status: 'approved' | 'rejected') {
-        if (!token) return;
-        try {
+        if (status === 'rejected' && !window.confirm(t('confirmRejectReview'))) return;
+        await runMutation('moderationFailed', async () => {
             await apiRequest(`/admin/reviews/${review.id}/status`, token, {
                 method: 'PATCH',
                 body: JSON.stringify({ status }),
             });
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'moderationFailed'));
-        }
+        });
     }
 
-    async function updateProduct(product: CatalogProduct, changes: { price?: number; isActive?: boolean }) {
-        if (!token) return;
-        try {
+    async function updateProduct(product: CatalogProduct, changes: { isActive: boolean }) {
+        if (changes.isActive === false && !window.confirm(format('confirmDeactivateProduct', {
+            product: displayName(product.name, product.name_ar),
+        }))) return;
+        await runMutation('productUpdated', async () => {
             await apiRequest(`/admin/products/${encodeURIComponent(product.id)}`, token, {
                 method: 'PATCH',
                 body: JSON.stringify(changes),
             });
-            await refreshDashboard(token);
-        } catch (requestError) {
-            setError(errorMessage(requestError, 'productUpdated'));
-        }
+        });
     }
 
-    async function createProduct(event: FormEvent<HTMLFormElement>) {
-            event.preventDefault();
-            if (!token) return;
-            try {
+    function openProductDialog(mode: 'create' | 'edit', product?: CatalogProduct) {
+        const form = product ? {
+            name: product.name,
+            nameAr: product.name_ar ?? '',
+            slug: product.slug,
+            description: product.description ?? '',
+            descriptionAr: product.description_ar ?? '',
+            categoryId: product.category_id,
+            brandId: product.brand_id,
+            price: String(product.price),
+            quantity: String(product.quantity),
+            packageSize: '',
+        } : emptyProductForm();
+        setEditingProduct(product ?? null);
+        setProductForm(form);
+        setProductFormInitial(form);
+        setProductDialog(mode);
+        setError('');
+        setSuccess('');
+    }
+
+    function closeProductDialog() {
+        if (loading) return;
+        if (productFormChanged && !window.confirm(t('discardProductChanges'))) return;
+        setProductDialog(null);
+        setEditingProduct(null);
+    }
+
+    async function saveProduct(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        if (!productDialog || loading) return;
+        const values = productForm;
+        let saved = false;
+        if (productDialog === 'create') {
+            saved = await runMutation('catalogItemCreated', async () => {
                 await apiRequest('/admin/products', token, {
                     method: 'POST',
                     body: JSON.stringify({
-                        ...newProduct,
-                        price: Number(newProduct.price),
-                        quantity: Number(newProduct.quantity),
-                        nameAr: newProduct.nameAr || undefined,
-                        description: newProduct.description || undefined,
-                        descriptionAr: newProduct.descriptionAr || undefined,
-                        packageSize: newProduct.packageSize || undefined,
+                        name: values.name.trim(),
+                        nameAr: values.nameAr.trim() || undefined,
+                        slug: values.slug.trim().toLowerCase(),
+                        categoryId: values.categoryId,
+                        brandId: values.brandId,
+                        description: values.description.trim() || undefined,
+                        descriptionAr: values.descriptionAr.trim() || undefined,
+                        price: Number(values.price),
+                        quantity: Number(values.quantity),
+                        packageSize: values.packageSize.trim() || undefined,
                     }),
                 });
-                setNewProduct({
-                    name: '', nameAr: '', slug: '', description: '', descriptionAr: '',
-                    categoryId: '', brandId: '', price: '', quantity: '0', packageSize: '',
-                });
-                await refreshDashboard(token);
-            } catch (requestError) {
-                setError(errorMessage(requestError, 'catalogItemCreated'));
+            });
+        } else if (editingProduct) {
+            const changes: {
+                name?: string;
+                nameAr?: string;
+                slug?: string;
+                description?: string;
+                descriptionAr?: string;
+                categoryId?: string;
+                brandId?: string;
+                price?: number;
+            } = {};
+            if (values.name.trim() !== editingProduct.name) changes.name = values.name.trim();
+            if (values.nameAr.trim() !== (editingProduct.name_ar ?? '')) changes.nameAr = values.nameAr.trim();
+            if (values.slug.trim().toLowerCase() !== editingProduct.slug) changes.slug = values.slug.trim().toLowerCase();
+            if (values.description.trim() !== (editingProduct.description ?? '')) changes.description = values.description.trim();
+            if (values.descriptionAr.trim() !== (editingProduct.description_ar ?? '')) changes.descriptionAr = values.descriptionAr.trim();
+            if (values.categoryId !== editingProduct.category_id) changes.categoryId = values.categoryId;
+            if (values.brandId !== editingProduct.brand_id) changes.brandId = values.brandId;
+            if (Number(values.price) !== editingProduct.price) changes.price = Number(values.price);
+            if (Object.keys(changes).length === 0) {
+                setProductDialog(null);
+                setEditingProduct(null);
+                return;
             }
+            saved = await runMutation('catalogItemUpdated', async () => {
+                await apiRequest(`/admin/products/${encodeURIComponent(editingProduct.id)}`, token, {
+                    method: 'PATCH',
+                    body: JSON.stringify(changes),
+                });
+            });
         }
+        if (saved) {
+            setProductDialog(null);
+            setEditingProduct(null);
+        }
+    }
 
     async function createTerm(type: 'categories' | 'brands', event: FormEvent<HTMLFormElement>) {
-            event.preventDefault();
-            if (!token) return;
-            const value = type === 'categories' ? newCategory : newBrand;
-            try {
+        event.preventDefault();
+        const value = type === 'categories' ? newCategory : newBrand;
+        await runMutation('catalogItemCreated', async () => {
                 await apiRequest(`/admin/${type}`, token, {
                     method: 'POST',
                     body: JSON.stringify({
@@ -393,17 +617,13 @@ function App() {
                 });
                 if (type === 'categories') setNewCategory({ name: '', nameAr: '', slug: '', description: '', descriptionAr: '' });
                 else setNewBrand({ name: '', nameAr: '', slug: '', description: '', descriptionAr: '' });
-                await refreshDashboard(token);
-            } catch (requestError) {
-                setError(errorMessage(requestError, 'catalogItemCreated'));
-            }
-        }
+        });
+    }
 
     async function updateTerm(type: 'categories' | 'brands', term: CatalogTerm) {
-            if (!token) return;
-            const changes = termEdits[term.id];
-            if (!changes || Object.values(changes).every((value) => value === undefined)) return;
-            try {
+        const changes = termEdits[term.id];
+        if (!changes || Object.values(changes).every((value) => value === undefined)) return;
+        await runMutation('catalogItemUpdated', async () => {
                 await apiRequest(`/admin/${type}/${encodeURIComponent(term.id)}`, token, {
                     method: 'PATCH',
                     body: JSON.stringify(changes),
@@ -413,31 +633,8 @@ function App() {
                     delete next[term.id];
                     return next;
                 });
-                await refreshDashboard(token);
-            } catch (requestError) {
-                setError(errorMessage(requestError, 'catalogItemUpdated'));
-            }
-        }
-
-    async function updateProductDetails(product: CatalogProduct) {
-            if (!token) return;
-            const changes = productEdits[product.id];
-            if (!changes) return;
-            try {
-                await apiRequest(`/admin/products/${encodeURIComponent(product.id)}`, token, {
-                    method: 'PATCH',
-                    body: JSON.stringify(changes),
-                });
-                setProductEdits((previous) => {
-                    const next = { ...previous };
-                    delete next[product.id];
-                    return next;
-                });
-                await refreshDashboard(token);
-            } catch (requestError) {
-                setError(errorMessage(requestError, 'catalogItemUpdated'));
-            }
-        }
+        });
+    }
 
     function displayName(english: string, arabic?: string | null) {
         return language === 'ar' && arabic ? arabic : english;
@@ -445,53 +642,38 @@ function App() {
 
     if (!token) {
         return (
-            <main className="app-shell auth-shell">
-                <header className="topbar">
-                    <div>
-                        <p className="eyebrow">{t('operationsDashboard')}</p>
-                        <h1>AquaFlow Admin</h1>
-                    </div>
-                    <button className="secondary" type="button" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}>
-                        {t('language')}
-                    </button>
-                </header>
+            <main className="auth-screen">
+                <div className="auth-brand"><span className="brand-mark">A</span><span>AquaFlow Admin</span></div>
                 <form className="card login-form" onSubmit={login}>
-                    <h2>{t('administratorSignIn')}</h2>
+                    <p className="eyebrow">{t('operationsDashboard')}</p>
+                    <h1>{t('administratorSignIn')}</h1>
+                    <p className="auth-description">AquaFlow · {t('adminWorkspace')}</p>
                     <label>{t('email')}<input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
                     <label>{t('password')}<input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-                    {error && <p className="error" role="alert">{error}</p>}
+                    {error && <p className="error-banner" role="alert">{error}</p>}
                     <button disabled={loading}>{loading ? t('signingIn') : t('signIn')}</button>
+                    <button className="language-toggle auth-language" type="button" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}>
+                        {t('language')}
+                    </button>
                 </form>
             </main>
         );
     }
 
     return (
-        <main className="app-shell">
-            <header className="topbar">
-                <div>
-                    <p className="eyebrow">{t('operationsDashboard')}</p>
-                    <h1>AquaFlow Admin</h1>
-                </div>
-                <button className="secondary" type="button" onClick={() => setLanguage(language === 'en' ? 'ar' : 'en')}>
-                    {t('language')}
-                </button>
-                <button className="secondary" onClick={() => {
-                    setToken('');
-                    setDashboard(null);
-                    setOrders([]);
-                    setPromotions([]);
-                    setInventory([]);
-                    setDeliveries([]);
-                    setReviews([]);
-                    setProducts([]);
-                    setCategories([]);
-                    setBrands([]);
-                    setPriceEdits({});
-                }}>{t('signOut')}</button>
-            </header>
-            {error && <p className="error" role="alert">{error}</p>}
-            {loading && <p role="status">{t('refreshing')}</p>}
+        <AdminLayout
+            pathname={pathname}
+            title={pageTitle}
+            language={language}
+            administrator={administrator || email}
+            t={t}
+            onNavigate={navigate}
+            onLanguageChange={() => setLanguage(language === 'en' ? 'ar' : 'en')}
+            onSignOut={signOut}
+        >
+            {error && <div className="error-banner" role="alert"><span>{error}</span><button className="button button-quiet" onClick={() => void refreshPage(token)}>{t('retry')}</button></div>}
+            {success && <p className="success-banner" role="status">{success}</p>}
+            {loading && <p className="loading-banner" role="status">{t('refreshing')}</p>}
             {dashboard && (
                 <>
                     <section className="grid" aria-label={t('operationsMetrics')}>
@@ -501,6 +683,16 @@ function App() {
                         <Metric label={t('paidRevenue')} value={`${dashboard.currency} ${dashboard.paidRevenue.toFixed(2)}`} />
                         <Metric label={t('pendingDispatch')} value={dashboard.pendingDispatch} />
                         <Metric label={t('activeProducts')} value={dashboard.activeProducts} />
+                    </section>
+                    <section className="quick-actions" aria-label={t('quickActions')}>
+                        {(['/orders', '/products', '/inventory', '/deliveries'] as const).map((path) => (
+                            <a className="quick-action-card" key={path} href={path} onClick={(event) => {
+                                event.preventDefault();
+                                navigate(path);
+                            }}>
+                                <span>{t(pageTitleKey(path))}</span><span aria-hidden="true">→</span>
+                            </a>
+                        ))}
                     </section>
                     <section className="card panel">
                         <h2>{t('recentOrders')}</h2>
@@ -521,8 +713,78 @@ function App() {
                             </div>
                         )}
                     </section>
+                </>
+            )}
+            {pathname === '/orders' && (
+                <section className="card panel">
+                    <div className="section-heading">
+                        <div><h2>{t('orders')}</h2><p>{ordersTotal} {t('results')}</p><p className="api-limitation">{t('paymentStatusUnavailable')}</p></div>
+                        <div className="toolbar">
+                            <label>{t('filterByStatus')}
+                                <select value={orderStatus} onChange={(event) => {
+                                    setOrderStatus(event.target.value);
+                                    setOrdersPage(1);
+                                }}>
+                                    <option value="">{t('allStatuses')}</option>
+                                    {['payment_pending', 'placed', 'paid', 'cancelled'].map((status) => (
+                                        <option key={status} value={status}>{translateStatus(language, status)}</option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="search-field">{t('searchCurrentPage')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                        </div>
+                    </div>
+                    <div className="table-wrap">
+                        <table>
+                            <thead><tr><th>{t('order')}</th><th>{t('customerId')}</th><th>{t('status')}</th><th>{t('paymentMethod')}</th><th>{t('total')}</th><th>{t('created')}</th><th>{t('action')}</th></tr></thead>
+                            <tbody>
+                                {filteredOrders.map((order) => (
+                                    <Fragment key={order.id}>
+                                        <tr>
+                                            <td title={order.id}>{order.id.slice(0, 8)}</td>
+                                            <td title={order.customerId}>{order.customerId.slice(0, 8)}</td>
+                                            <td><span className={`status-pill status-${order.status}`}>{translateStatus(language, order.status)}</span></td>
+                                            <td>{translateStatus(language, order.paymentMethod)}</td>
+                                            <td>{order.currency} {order.total.toFixed(2)}</td>
+                                            <td>{new Date(order.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-SA')}</td>
+                                            <td><button className="button button-quiet" onClick={() => setExpandedOrder(expandedOrder === order.id ? '' : order.id)}>{expandedOrder === order.id ? t('hideDetails') : t('viewDetails')}</button></td>
+                                        </tr>
+                                        {expandedOrder === order.id && (
+                                            <tr className="detail-row"><td colSpan={7}>
+                                                <strong>{t('orderDetails')}</strong>
+                                                <dl className="order-detail-grid">
+                                                    <div><dt>{t('orderId')}</dt><dd>{order.id}</dd></div>
+                                                    <div><dt>{t('customerId')}</dt><dd>{order.customerId}</dd></div>
+                                                    <div><dt>{t('status')}</dt><dd>{translateStatus(language, order.status)}</dd></div>
+                                                    <div><dt>{t('payment')}</dt><dd>{translateStatus(language, order.paymentMethod)}</dd></div>
+                                                </dl>
+                                            </td></tr>
+                                        )}
+                                    </Fragment>
+                                ))}
+                                {orders.length > 0 && filteredOrders.length === 0 && <tr><td colSpan={7} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                {orders.length === 0 && !loading && <tr><td colSpan={7} className="empty-state">{t('noOrders')}</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="pagination">
+                        <button className="button button-quiet" disabled={safeOrdersPage <= 1 || loading} onClick={() => setOrdersPage(safeOrdersPage - 1)}>{t('previous')}</button>
+                        <span>{t('page')} {safeOrdersPage} / {orderPageCount}</span>
+                        <button className="button button-quiet" disabled={safeOrdersPage >= orderPageCount || loading} onClick={() => setOrdersPage(safeOrdersPage + 1)}>{t('next')}</button>
+                    </div>
+                </section>
+            )}
+            {pathname === '/promotions' && (
                     <section className="card panel">
-                        <h2>{t('promotions')}</h2>
+                        <div className="section-heading">
+                            <h2>{t('promotions')}</h2>
+                            <div className="toolbar">
+                                <label>{t('status')}<select value={promotionActivity} onChange={(event) => setPromotionActivity(event.target.value)}>
+                                    <option value="">{t('allActivity')}</option><option value="active">{t('activeOnly')}</option><option value="inactive">{t('inactiveOnly')}</option>
+                                </select></label>
+                                <label className="search-field">{t('searchCurrentPage')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                            </div>
+                        </div>
                         <form className="promotion-form" onSubmit={createPromotion}>
                             <label>{t('code')}<input required maxLength={64} value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} /></label>
                             <label>{t('discountType')}<select value={discountType} onChange={(event) => setDiscountType(event.target.value as 'percentage' | 'fixed')}>
@@ -531,11 +793,11 @@ function App() {
                             <label>{t('value')}<input type="number" min="0.01" max={discountType === 'percentage' ? 100 : undefined} step="0.01" required value={discountValue} onChange={(event) => setDiscountValue(event.target.value)} /></label>
                             <button disabled={loading}>{t('createPromotion')}</button>
                         </form>
-                        {promotions.length === 0 ? <p>{t('noPromotions')}</p> : (
+                        {promotions.length === 0 ? <p className="empty-state">{t('noPromotions')}</p> : (
                             <div className="table-wrap">
                                 <table>
                                     <thead><tr><th>{t('code')}</th><th>{t('discount')}</th><th>{t('redemptions')}</th><th>{t('status')}</th><th /></tr></thead>
-                                    <tbody>{promotions.map((promotion) => (
+                                    <tbody>{filteredPromotions.map((promotion) => (
                                         <tr key={promotion.id}>
                                             <td>{promotion.code}</td>
                                             <td>{promotion.discount_type === 'percentage' ? `${promotion.discount_value}%` : format('discountSar', { value: promotion.discount_value })}</td>
@@ -543,41 +805,58 @@ function App() {
                                             <td>{promotion.is_active ? t('active') : t('inactive')}</td>
                                             <td><button className="secondary" onClick={() => void togglePromotion(promotion)}>{promotion.is_active ? t('disable') : t('enable')}</button></td>
                                         </tr>
-                                    ))}</tbody>
+                                    ))}
+                                    {promotions.length > 0 && filteredPromotions.length === 0 && <tr><td colSpan={5} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                    </tbody>
                                 </table>
                             </div>
                         )}
                     </section>
+            )}
+            {pathname === '/inventory' && (
                     <section className="card panel">
                         <h2>{t('inventory')}</h2>
                         <p>{t('inventoryDescription')}</p>
+                        <div className="toolbar">
+                            <label>{t('filterByStatus')}<select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)}>
+                                <option value="">{t('allStatuses')}</option>
+                                {['pending_dispatch', 'assigned', 'picked_up', 'delivered', 'failed', 'cancelled'].map((status) => <option key={status} value={status}>{translateStatus(language, status)}</option>)}
+                            </select></label>
+                            <label className="search-field">{t('searchCurrentPage')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                        </div>
                         <div className="table-wrap">
                             <table>
                                 <thead><tr><th>{t('product')}</th><th>{t('stock')}</th><th>{t('availability')}</th><th>{t('adjustment')}</th></tr></thead>
-                                <tbody>{inventory.map((item) => (
+                                <tbody>{filteredInventory.map((item) => (
                                     <tr key={item.id}>
                                         <td>{displayName(
                                             products.find((product) => product.id === item.id)?.name ?? item.name,
                                             products.find((product) => product.id === item.id)?.name_ar,
                                         )}</td>
                                         <td>{item.quantity}</td>
-                                        <td>{translateStatus(language, item.availability)}</td>
+                                        <td><span className={`status-pill status-${item.availability}`}>{translateStatus(language, item.availability)}</span></td>
                                         <td>
                                             <button className="secondary" aria-label={format('removeOne', { product: item.name })} disabled={loading || item.quantity <= 0} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
                                             <button aria-label={format('addOne', { product: item.name })} onClick={() => void adjustInventory(item, 1)}>+</button>
                                         </td>
                                     </tr>
-                                ))}</tbody>
+                                ))}
+                                {inventory.length === 0 && !loading && <tr><td colSpan={4} className="empty-state">{t('noInventory')}</td></tr>}
+                                {inventory.length > 0 && filteredInventory.length === 0 && <tr><td colSpan={4} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                </tbody>
                             </table>
                         </div>
                     </section>
+            )}
+            {pathname === '/deliveries' && (
                     <section className="card panel">
                         <h2>{t('deliveryOperations')}</h2>
                         <p>{t('manualDeliveryDescription')}</p>
+                        <label className="search-field">{t('searchPlaceholder')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
                         <div className="table-wrap">
                             <table>
                                 <thead><tr><th>{t('order')}</th><th>{t('status')}</th><th>{t('zoneEstimate')}</th><th>{t('action')}</th></tr></thead>
-                                <tbody>{deliveries.map((delivery) => {
+                                <tbody>{filteredDeliveries.map((delivery) => {
                                     const nextStatus = delivery.status === 'pending_dispatch'
                                         ? 'assigned'
                                         : delivery.status === 'assigned'
@@ -585,8 +864,8 @@ function App() {
                                             : delivery.status === 'picked_up' ? 'delivered' : null;
                                     return (
                                         <tr key={delivery.id}>
-                                            <td>{delivery.order_id.slice(0, 8)}</td>
-                                            <td>{translateStatus(language, delivery.status)}</td>
+                                            <td title={delivery.order_id}>{delivery.order_id.slice(0, 8)}</td>
+                                            <td><span className={`status-pill status-${delivery.status}`}>{translateStatus(language, delivery.status)}</span></td>
                                             <td>{format('minutes', { count: delivery.estimated_minutes })}</td>
                                             <td>
                                                 {nextStatus && (
@@ -603,53 +882,127 @@ function App() {
                                             </td>
                                         </tr>
                                     );
-                                })}</tbody>
+                                })}
+                                {deliveries.length > 0 && filteredDeliveries.length === 0 && <tr><td colSpan={4} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                {deliveries.length === 0 && !loading && <tr><td colSpan={4} className="empty-state">{t('noDeliveries')}</td></tr>}
+                                </tbody>
                             </table>
                         </div>
                     </section>
+            )}
+            {pathname === '/reviews' && (
                     <section className="card panel">
                         <h2>{t('reviewsAwaitingModeration')}</h2>
+                        <label className="search-field">{t('searchPlaceholder')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
                         {reviews.length === 0 ? <p>{t('noReviews')}</p> : (
                             <div className="table-wrap">
                                 <table>
-                                    <thead><tr><th>{t('product')}</th><th>{t('rating')}</th><th>{t('comment')}</th><th>{t('action')}</th></tr></thead>
-                                    <tbody>{reviews.map((review) => (
+                                    <thead><tr><th>{t('product')}</th><th>{t('customerId')}</th><th>{t('relatedOrder')}</th><th>{t('rating')}</th><th>{t('comment')}</th><th>{t('status')}</th><th>{t('action')}</th></tr></thead>
+                                    <tbody>{filteredReviews.map((review) => (
                                         <tr key={review.id}>
                                             <td>{displayName(review.product_name, review.product_name_ar)}</td>
+                                            <td title={review.customer_id}>{review.customer_id.slice(0, 8)}</td>
+                                            <td title={review.order_id}>{review.order_id.slice(0, 8)}</td>
                                             <td>{review.rating} / 5</td>
                                             <td>{review.comment || '—'}</td>
+                                            <td><span className="status-pill">{t('reviewPending')}</span></td>
                                             <td>
                                                 <button onClick={() => void moderateReview(review, 'approved')}>{t('approve')}</button>{' '}
                                                 <button className="secondary" onClick={() => void moderateReview(review, 'rejected')}>{t('reject')}</button>
                                             </td>
                                         </tr>
-                                    ))}</tbody>
+                                    ))}
+                                    {reviews.length > 0 && filteredReviews.length === 0 && <tr><td colSpan={7} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                    </tbody>
                                 </table>
                             </div>
                         )}
                     </section>
+            )}
+            {(pathname === '/products' || pathname === '/categories' || pathname === '/brands' || pathname === '/catalog-terms') && (
                     <section className="card panel">
-                        <h2>{t('catalogOperations')}</h2>
-                        <p>{t('mediaNotConfigured')}</p>
-                        <h3>{t('createProduct')}</h3>
-                        <form className="catalog-form" onSubmit={createProduct}>
-                            <label>{t('productName')}<input required maxLength={200} value={newProduct.name} onChange={(event) => setNewProduct({ ...newProduct, name: event.target.value })} /></label>
-                            <label>{t('arabicName')}<input maxLength={200} value={newProduct.nameAr} onChange={(event) => setNewProduct({ ...newProduct, nameAr: event.target.value })} /></label>
-                            <label>{t('slug')}<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={200} value={newProduct.slug} onChange={(event) => setNewProduct({ ...newProduct, slug: event.target.value.toLowerCase() })} /></label>
-                            <label>{t('category')}<select required value={newProduct.categoryId} onChange={(event) => setNewProduct({ ...newProduct, categoryId: event.target.value })}><option value="">{t('selectCategory')}</option>{categories.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}</select></label>
-                            <label>{t('brand')}<select required value={newProduct.brandId} onChange={(event) => setNewProduct({ ...newProduct, brandId: event.target.value })}><option value="">{t('selectBrand')}</option>{brands.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}</select></label>
-                            <label>{t('priceSar')}<input type="number" min="0.01" step="0.01" required value={newProduct.price} onChange={(event) => setNewProduct({ ...newProduct, price: event.target.value })} /></label>
-                            <label>{t('stock')}<input type="number" min="0" step="1" required value={newProduct.quantity} onChange={(event) => setNewProduct({ ...newProduct, quantity: event.target.value })} /></label>
-                            <label>{t('packageSize')}<input maxLength={80} value={newProduct.packageSize} onChange={(event) => setNewProduct({ ...newProduct, packageSize: event.target.value })} /></label>
-                            <label>{t('description')}<input maxLength={10000} value={newProduct.description} onChange={(event) => setNewProduct({ ...newProduct, description: event.target.value })} /></label>
-                            <label>{t('arabicDescription')}<input maxLength={10000} value={newProduct.descriptionAr} onChange={(event) => setNewProduct({ ...newProduct, descriptionAr: event.target.value })} /></label>
-                            <label>{t('productMedia')}<input type="file" disabled aria-disabled="true" /></label>
-                            <button disabled={loading || !categories.length || !brands.length}>{t('createProduct')}</button>
-                        </form>
-                        <div className="catalog-management-grid">
-                            {(['categories', 'brands'] as const).map((type) => {
+                        {pathname === '/products' && (
+                        <>
+                            <header className="products-page-heading">
+                                <div>
+                                    <h2>{t('productsManagement')}</h2>
+                                    <p>{t('productsPageDescription')}</p>
+                                    <span className="product-count">{format('productsLoaded', { count: products.length })}</span>
+                                </div>
+                                <button onClick={() => openProductDialog('create')} disabled={loading || !categories.length || !brands.length}>
+                                    <span aria-hidden="true">＋</span>{t('addProduct')}
+                                </button>
+                            </header>
+                            {(!categories.length || !brands.length) && <p className="api-limitation products-api-note">{t('catalogTermsRequired')}</p>}
+                            <div className="product-toolbar">
+                                <label className="product-search">{t('searchProducts')}
+                                    <input type="search" value={search} onChange={(event) => {
+                                        setSearch(event.target.value);
+                                        setProductsPage(1);
+                                    }} />
+                                </label>
+                                <label>{t('status')}
+                                    <select value={productActivity} onChange={(event) => {
+                                        setProductActivity(event.target.value);
+                                        setProductsPage(1);
+                                    }}>
+                                        <option value="">{t('allActivity')}</option><option value="active">{t('activeOnly')}</option><option value="inactive">{t('inactiveOnly')}</option>
+                                    </select>
+                                </label>
+                                <label>{t('category')}<select value={productCategory} onChange={(event) => {
+                                    setProductCategory(event.target.value);
+                                    setProductsPage(1);
+                                }}>
+                                    <option value="">{t('allCategories')}</option>
+                                    {categories.map((category) => <option key={category.id} value={category.id}>{displayName(category.name, category.name_ar)}</option>)}
+                                </select></label>
+                                <label>{t('brand')}<select value={productBrand} onChange={(event) => {
+                                    setProductBrand(event.target.value);
+                                    setProductsPage(1);
+                                }}>
+                                    <option value="">{t('allBrands')}</option>
+                                    {brands.map((brand) => <option key={brand.id} value={brand.id}>{displayName(brand.name, brand.name_ar)}</option>)}
+                                </select></label>
+                                <label>{t('sortBy')}<select value={productSort} onChange={(event) => {
+                                    setProductSort(event.target.value);
+                                    setProductsPage(1);
+                                }}>
+                                    <option value="name">{t('sortName')}</option>
+                                    <option value="price-asc">{t('sortPriceLow')}</option>
+                                    <option value="price-desc">{t('sortPriceHigh')}</option>
+                                    <option value="stock-asc">{t('sortStockLow')}</option>
+                                    <option value="stock-desc">{t('sortStockHigh')}</option>
+                                </select></label>
+                                <label>{t('pageSize')}<select value={productPageSize} onChange={(event) => {
+                                    setProductPageSize(Number(event.target.value));
+                                    setProductsPage(1);
+                                }}>
+                                    <option value={20}>20</option><option value={50}>50</option><option value={100}>100</option>
+                                </select></label>
+                                <button className="button button-quiet" onClick={() => {
+                                    setSearch('');
+                                    setProductActivity('');
+                                    setProductCategory('');
+                                    setProductBrand('');
+                                    setProductSort('name');
+                                    setProductsPage(1);
+                                }} disabled={!search && !productActivity && !productCategory && !productBrand && productSort === 'name'}>
+                                    {t('clearFilters')}
+                                </button>
+                            </div>
+                            <p className="api-limitation products-api-note">{t('productsApiLimit')}</p>
+                        </>
+                        )}
+                        {pathname !== '/products' && (
+                            <div className="section-heading"><h2>{pageTitle}</h2>
+                                <label className="search-field">{t('searchCurrentPage')}<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+                            </div>
+                        )}
+                        {(pathname !== '/products') && <div className="catalog-management-grid">
+                            {(['categories', 'brands'] as const).filter((type) => pathname === '/catalog-terms' || pathname === `/${type}`).map((type) => {
                                 const isCategory = type === 'categories';
-                                const terms = isCategory ? categories : brands;
+                                const terms = (isCategory ? categories : brands).filter((term) =>
+                                    `${term.name} ${term.name_ar ?? ''} ${term.slug}`.toLowerCase().includes(searchTerm));
                                 const form = isCategory ? newCategory : newBrand;
                                 const setForm = isCategory ? setNewCategory : setNewBrand;
                                 return (
@@ -676,74 +1029,151 @@ function App() {
                                                         <td><input aria-label={`${t('arabicDescription')} ${term.name}`} value={edit.descriptionAr ?? term.description_ar ?? ''} onChange={(event) => setTermEdits({ ...termEdits, [term.id]: { ...edit, descriptionAr: event.target.value } })} /></td>
                                                         <td><button className="secondary" onClick={() => void updateTerm(type, term)}>{t('saveChanges')}</button></td>
                                                     </tr>;
-                                                })}</tbody>
+                                                })}
+                                                {terms.length === 0 && <tr><td colSpan={6} className="empty-state">{searchTerm ? t('noMatchingResults') : t('noTerms')}</td></tr>}
+                                                </tbody>
                                             </table>
                                         </div>
                                     </div>
                                 );
                             })}
-                        </div>
+                        </div>}
+                        {pathname === '/products' && (
+                        <>
                         <div className="table-wrap">
-                            <table>
-                                <thead><tr><th>{t('product')}</th><th>{t('category')}</th><th>{t('brand')}</th><th>{t('stock')}</th><th>{t('priceSar')}</th><th>{t('status')}</th></tr></thead>
-                                <tbody>{products.map((product) => (
+                            <table className="products-table">
+                                <thead><tr><th>{t('product')}</th><th>{t('slug')}</th><th>{t('category')}</th><th>{t('brand')}</th><th>{t('priceSar')}</th><th>{t('stock')}</th><th>{t('status')}</th><th>{t('actions')}</th></tr></thead>
+                                <tbody>{visibleProducts.map((product) => (
                                     <tr key={product.id}>
-                                        <td>
-                                            <input aria-label={`${t('productName')} ${product.name}`} value={productEdits[product.id]?.name ?? product.name} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], name: event.target.value } })} />
-                                            <input aria-label={`${t('arabicName')} ${product.name}`} value={productEdits[product.id]?.nameAr ?? product.name_ar ?? ''} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], nameAr: event.target.value } })} />
-                                            <input aria-label={`${t('slug')} ${product.name}`} value={productEdits[product.id]?.slug ?? product.slug} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], slug: event.target.value.toLowerCase() } })} />
-                                            <input aria-label={`${t('description')} ${product.name}`} value={productEdits[product.id]?.description ?? product.description ?? ''} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], description: event.target.value } })} />
-                                            <input aria-label={`${t('arabicDescription')} ${product.name}`} value={productEdits[product.id]?.descriptionAr ?? product.description_ar ?? ''} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], descriptionAr: event.target.value } })} />
-                                            <button className="secondary" onClick={() => void updateProductDetails(product)}>{t('saveChanges')}</button>
+                                        <td><span className="product-primary-name" dir="auto">{displayName(product.name, product.name_ar)}</span>
+                                            {language === 'ar' && product.name_ar && <span className="product-secondary-name" dir="auto">{product.name}</span>}
                                         </td>
-                                        <td>
-                                            {displayName(product.category_name, product.category_name_ar)}
-                                            <select aria-label={`${t('category')} ${product.name}`} value={productEdits[product.id]?.categoryId ?? product.category_id} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], categoryId: event.target.value } })}>
-                                                {categories.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            {displayName(product.brand_name, brands.find((brandItem) => brandItem.id === product.brand_id)?.name_ar)}
-                                            <select aria-label={`${t('brand')} ${product.name}`} value={productEdits[product.id]?.brandId ?? product.brand_id} onChange={(event) => setProductEdits({ ...productEdits, [product.id]: { ...productEdits[product.id], brandId: event.target.value } })}>
-                                                {brands.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}
-                                            </select>
-                                        </td>
-                                        <td>{product.quantity}</td>
-                                        <td>
-                                            <form className="inline-form" onSubmit={(event) => {
-                                                event.preventDefault();
-                                                const value = Number(priceEdits[product.id]);
-                                                if (Number.isFinite(value) && value > 0) {
-                                                    void updateProduct(product, { price: value });
-                                                }
-                                            }}>
-                                                <input
-                                                    aria-label={format('priceFor', { product: displayName(product.name, product.name_ar) })}
-                                                    type="number"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    value={priceEdits[product.id] ?? product.price}
-                                                    onChange={(event) => setPriceEdits({
-                                                        ...priceEdits,
-                                                        [product.id]: event.target.value,
-                                                    })}
-                                                />
-                                                <button className="secondary">{t('save')}</button>
-                                            </form>
-                                        </td>
-                                        <td>
-                                            <button className={product.is_active ? 'secondary' : ''} onClick={() => void updateProduct(product, { isActive: !product.is_active })}>
-                                                {product.is_active ? t('active') : t('inactive')}
+                                        <td><span className="product-identifier" dir="ltr">{product.slug}</span></td>
+                                        <td dir="auto">{displayName(product.category_name, product.category_name_ar)}</td>
+                                        <td dir="auto">{displayName(product.brand_name, brands.find((brandItem) => brandItem.id === product.brand_id)?.name_ar)}</td>
+                                        <td><span className="numeric-value">{product.price.toFixed(2)}</span> <span className="currency-label">SAR</span></td>
+                                        <td><span className="numeric-value">{product.quantity}</span></td>
+                                        <td><span className={`status-pill ${product.is_active ? 'status-active' : 'status-inactive'}`}>{product.is_active ? t('active') : t('inactive')}</span></td>
+                                        <td><div className="product-actions">
+                                            <button className="button button-quiet" onClick={() => openProductDialog('edit', product)} disabled={loading}>{t('edit')}</button>
+                                            <button className="button button-quiet" onClick={() => void updateProduct(product, { isActive: !product.is_active })} disabled={loading}>
+                                                {product.is_active ? t('deactivate') : t('activate')}
                                             </button>
-                                        </td>
+                                        </div></td>
                                     </tr>
-                                ))}</tbody>
+                                ))}
+                                {products.length === 0 && loading && <tr><td colSpan={8} className="empty-state">{t('loadingProducts')}</td></tr>}
+                                {products.length === 0 && !loading && error && <tr><td colSpan={8} className="empty-state">{t('productsLoadFailed')}</td></tr>}
+                                {products.length === 0 && !loading && !error && <tr><td colSpan={8} className="empty-state">{t('noProducts')}</td></tr>}
+                                {products.length > 0 && filteredProducts.length === 0 && <tr><td colSpan={8} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                </tbody>
                             </table>
                         </div>
+                        {filteredProducts.length > productPageSize && (
+                            <div className="pagination">
+                                <button className="button button-quiet" disabled={safeProductsPage <= 1} onClick={() => setProductsPage(safeProductsPage - 1)}>{t('previous')}</button>
+                                <span>{format('pagination', {
+                                    start: (safeProductsPage - 1) * productPageSize + 1,
+                                    end: Math.min(safeProductsPage * productPageSize, filteredProducts.length),
+                                    total: filteredProducts.length,
+                                })}</span>
+                                <button className="button button-quiet" disabled={safeProductsPage >= productPageCount} onClick={() => setProductsPage(safeProductsPage + 1)}>{t('next')}</button>
+                            </div>
+                        )}
+                        </>
+                        )}
+                        {pathname === '/products' && productDialog && (
+                            <div className="product-modal-backdrop">
+                                <section className="product-modal" role="dialog" aria-modal="true" aria-labelledby="product-dialog-title" onKeyDown={(event) => {
+                                    if (event.key === 'Escape') closeProductDialog();
+                                }}>
+                                    <header className="product-modal-header">
+                                        <div>
+                                            <h2 id="product-dialog-title">{t(productDialog === 'create' ? 'addProduct' : 'editProduct')}</h2>
+                                            <p>{t('productFormDescription')}</p>
+                                        </div>
+                                        <button className="icon-button modal-close" type="button" aria-label={t('close')} onClick={closeProductDialog} disabled={loading}>×</button>
+                                    </header>
+                                    {error && <p className="error-banner product-form-error" role="alert">{error}</p>}
+                                    <form className="product-form" onChange={() => { if (error) setError(''); }} onSubmit={(event) => void saveProduct(event)}>
+                                        <fieldset className="product-form-fields" disabled={loading}>
+                                        <div className="product-form-section">
+                                            <h3>{t('productDetails')}</h3>
+                                            <div className="product-form-grid">
+                                                <label><span className="field-label">{t('productName')} <span className="field-required">{t('required')}</span></span>
+                                                    <input autoFocus required maxLength={200} value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} />
+                                                </label>
+                                                <label><span className="field-label">{t('arabicName')} <span className="field-optional">{t('optional')}</span></span>
+                                                    <input maxLength={200} value={productForm.nameAr} onChange={(event) => setProductForm({ ...productForm, nameAr: event.target.value })} />
+                                                </label>
+                                                <label><span className="field-label">{t('slug')} <span className="field-required">{t('required')}</span></span>
+                                                    <input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={200} dir="ltr" value={productForm.slug} onChange={(event) => setProductForm({ ...productForm, slug: event.target.value.toLowerCase() })} />
+                                                </label>
+                                                <label><span className="field-label">{t('priceSar')} <span className="field-required">{t('required')}</span></span>
+                                                    <input type="number" min="0.01" max="1000000" step="0.01" required value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} />
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div className="product-form-section">
+                                            <h3>{t('classification')}</h3>
+                                            <div className="product-form-grid">
+                                                <label><span className="field-label">{t('category')} <span className="field-required">{t('required')}</span></span>
+                                                    <select required value={productForm.categoryId} onChange={(event) => setProductForm({ ...productForm, categoryId: event.target.value })}>
+                                                        <option value="">{t('selectCategory')}</option>
+                                                        {categories.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}
+                                                    </select>
+                                                </label>
+                                                <label><span className="field-label">{t('brand')} <span className="field-required">{t('required')}</span></span>
+                                                    <select required value={productForm.brandId} onChange={(event) => setProductForm({ ...productForm, brandId: event.target.value })}>
+                                                        <option value="">{t('selectBrand')}</option>
+                                                        {brands.map((item) => <option key={item.id} value={item.id}>{displayName(item.name, item.name_ar)}</option>)}
+                                                    </select>
+                                                </label>
+                                                {productDialog === 'create' && <>
+                                                    <label><span className="field-label">{t('stock')} <span className="field-required">{t('required')}</span></span>
+                                                        <input type="number" min="0" max="1000000" step="1" required value={productForm.quantity} onChange={(event) => setProductForm({ ...productForm, quantity: event.target.value })} />
+                                                    </label>
+                                                    <label><span className="field-label">{t('packageSize')} <span className="field-optional">{t('optional')}</span></span>
+                                                        <input maxLength={80} value={productForm.packageSize} onChange={(event) => setProductForm({ ...productForm, packageSize: event.target.value })} />
+                                                    </label>
+                                                </>}
+                                            </div>
+                                            {productDialog === 'edit' && <p className="form-note">{t('productQuantityEditNote')}</p>}
+                                        </div>
+                                        <div className="product-form-section">
+                                            <h3>{t('descriptions')}</h3>
+                                            <div className="product-form-grid">
+                                                <label><span className="field-label">{t('description')} <span className="field-optional">{t('optional')}</span></span>
+                                                    <textarea maxLength={10000} rows={3} value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} />
+                                                </label>
+                                                <label><span className="field-label">{t('arabicDescription')} <span className="field-optional">{t('optional')}</span></span>
+                                                    <textarea maxLength={10000} rows={3} value={productForm.descriptionAr} onChange={(event) => setProductForm({ ...productForm, descriptionAr: event.target.value })} />
+                                                </label>
+                                            </div>
+                                            {productDialog === 'create' && <p className="form-note">{t('mediaNotConfigured')}</p>}
+                                        </div>
+                                        </fieldset>
+                                        <footer className="product-form-actions">
+                                            <button className="secondary" type="button" onClick={closeProductDialog} disabled={loading}>{t('cancel')}</button>
+                                            <button type="submit" disabled={loading || (productDialog === 'edit' && !productFormChanged)}>
+                                                {loading ? t('saving') : t('save')}
+                                            </button>
+                                        </footer>
+                                    </form>
+                                </section>
+                            </div>
+                        )}
                     </section>
-                </>
             )}
-        </main>
+            {!isAdminPath(pathname) && (
+                <section className="card panel not-found">
+                    <span className="not-found-code">404</span>
+                    <h2>{t('pageNotFound')}</h2>
+                    <p>{t('notFoundDescription')}</p>
+                    <button onClick={() => navigate('/')}>{t('backToDashboard')}</button>
+                </section>
+            )}
+        </AdminLayout>
     );
 }
 
