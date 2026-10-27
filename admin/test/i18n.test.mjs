@@ -22,6 +22,12 @@ test('admin messages and interpolated actions are translated into Arabic', () =>
 
 test('English remains the default source copy and unknown statuses remain readable', () => {
     assert.equal(translate('en', 'operationsDashboard'), 'Operations dashboard');
+    assert.equal(translate('en', 'markDeliveryFailed'), 'Mark failed');
+    assert.equal(translate('ar', 'markDeliveryFailed'), 'تعذر التوصيل');
+    assert.equal(
+        formatMessage('ar', 'rateLimitedFor', { seconds: 67 }),
+        'طلبات كثيرة جداً. يرجى إعادة المحاولة بعد 67 ثانية.',
+    );
     assert.equal(translateStatus('en', 'custom_status'), 'custom status');
 });
 

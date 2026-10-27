@@ -203,16 +203,21 @@
 Authentication rate limits are shared through PostgreSQL and return HTTP 429
 with a `Retry-After` header when exceeded:
 
-- login: 10 requests per client address per 15 minutes
+- login: 100 requests per client address and 10 requests per normalized email
+  and client address per 15 minutes. This limits repeated attempts against one
+  account without making all users behind localhost/NAT share a 10-request
+  login budget.
 - registration: 20 requests per client address per 15 minutes
 - refresh: 30 requests per client address per 15 minutes
 - logout: 30 requests per client address per 15 minutes
 - profile updates: 10 requests per client address per 15 minutes
 
-The database stores a SHA-256 digest of the limiter scope/address key, not the
-plain address. Counts use an atomic database upsert, so multiple backend
-instances share the same window. Rate-limit database errors fail closed for
-the guarded request; the service does not fall back to in-memory counters.
+The database stores a SHA-256 digest of the limiter scope and key material, not
+the plain address or email. Login requests are counted by the shared client
+address ceiling and a separate normalized-email/address bucket. Counts use an
+atomic database upsert, so multiple backend instances share the same window.
+Rate-limit database errors fail closed for the guarded request; the service
+does not fall back to in-memory counters.
 Behind a reverse proxy, configure trusted proxy handling explicitly before
 relying on client-address-based limits. These application limits are not a
 replacement for a deployment-level edge/WAF policy.

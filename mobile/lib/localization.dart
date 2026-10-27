@@ -3,9 +3,123 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+const _adminTranslations = <String, String>{
+  'AquaFlow Admin': 'إدارة أكوافلو',
+  'Administrator sign in': 'تسجيل دخول المسؤول',
+  'Enter a valid email address': 'أدخل بريداً إلكترونياً صحيحاً',
+  'This account does not have administrator access.':
+      'هذا الحساب لا يملك صلاحية المسؤول.',
+  'The server returned an incomplete administrator session.':
+      'أعاد الخادم بيانات جلسة مسؤول غير مكتملة.',
+  'Unable to reach the AquaFlow server. Check the API URL and network.':
+      'تعذر الاتصال بخادم أكوافلو. تحقق من رابط واجهة البرمجة والشبكة.',
+  'Administrator sign-in is required.': 'يلزم تسجيل الدخول بحساب مسؤول.',
+  'The request could not be completed.': 'تعذر إكمال الطلب.',
+  'Dashboard': 'لوحة المعلومات',
+  'Products': 'المنتجات',
+  'Operations': 'العمليات',
+  'More': 'المزيد',
+  'Overview': 'نظرة عامة',
+  'Orders': 'الطلبات',
+  'Open orders': 'الطلبات المفتوحة',
+  'Awaiting payment': 'بانتظار الدفع',
+  'Paid revenue': 'إيرادات الطلبات المدفوعة',
+  'Pending dispatch': 'بانتظار الإرسال',
+  'Active products': 'المنتجات النشطة',
+  'Recent orders': 'أحدث الطلبات',
+  'No orders yet.': 'لا توجد طلبات بعد.',
+  'Add product': 'إضافة منتج',
+  'Product actions': 'إجراءات المنتج',
+  'Edit details': 'تعديل التفاصيل',
+  'Update price': 'تحديث السعر',
+  'Price': 'السعر',
+  'Change price': 'تغيير السعر',
+  'Enter a price greater than zero.': 'أدخل سعراً أكبر من صفر.',
+  'Categories and brands': 'الفئات والعلامات التجارية',
+  'Add category': 'إضافة فئة',
+  'Add brand': 'إضافة علامة تجارية',
+  'Edit category': 'تعديل الفئة',
+  'Edit brand': 'تعديل العلامة التجارية',
+  'Inventory': 'المخزون',
+  'Deliveries': 'التوصيل',
+  'Status': 'الحالة',
+  'All': 'الكل',
+  'Previous page': 'الصفحة السابقة',
+  'Next page': 'الصفحة التالية',
+  'Adjust stock': 'تعديل المخزون',
+  'Change in units (positive or negative)':
+      'مقدار التغيير بالوحدات (موجب أو سالب)',
+  'Enter a non-zero whole number.': 'أدخل عدداً صحيحاً غير صفر.',
+  'Update delivery': 'تحديث حالة التوصيل',
+  'Promotions': 'العروض الترويجية',
+  'Reviews': 'التقييمات',
+  'Cities & zones': 'المدن ومناطق التوصيل',
+  'Create promotion': 'إنشاء عرض ترويجي',
+  'Reviews awaiting moderation': 'تقييمات بانتظار المراجعة',
+  'Approve': 'قبول',
+  'Reject': 'رفض',
+  'Cities': 'المدن',
+  'No active cities.': 'لا توجد مدن نشطة.',
+  'Delivery zones (read-only)': 'مناطق التوصيل (للعرض فقط)',
+  'Zone configuration is not editable through the current API.':
+      'لا يمكن تعديل إعدادات المناطق عبر واجهة البرمجة الحالية.',
+  'No active delivery zones.': 'لا توجد مناطق توصيل نشطة.',
+  'Unable to load {section}.': 'تعذر تحميل {section}.',
+  'No {section} found.': 'لم يتم العثور على {section}.',
+  'Create a category and brand before adding a product.':
+      'أنشئ فئة وعلامة تجارية قبل إضافة منتج.',
+  'Name': 'الاسم',
+  'Slug (lowercase-hyphenated)': 'المعرّف (أحرف صغيرة وواصلات)',
+  'Price (SAR)': 'السعر (ريال سعودي)',
+  'Category': 'الفئة',
+  'Brand': 'العلامة التجارية',
+  'Create': 'إنشاء',
+  'Arabic name (optional)': 'الاسم بالعربية (اختياري)',
+  'Slug': 'المعرّف',
+  'Save': 'حفظ',
+  'Code': 'الرمز',
+  'Discount type': 'نوع الخصم',
+  'Percentage': 'نسبة مئوية',
+  'Fixed amount': 'مبلغ ثابت',
+  'Discount value': 'قيمة الخصم',
+  'Enter a valid promotion code and discount.': 'أدخل رمز عرض وقيمة خصم صحيحة.',
+  'Enter a valid product name, slug, and price.':
+      'أدخل اسماً ومعرّفاً وسعراً صحيحاً للمنتج.',
+  'Low stock': 'مخزون منخفض',
+  'Out of stock': 'نفد المخزون',
+  'Unable to load inventory.': 'تعذر تحميل المخزون.',
+  'Unable to load orders.': 'تعذر تحميل الطلبات.',
+  'Unable to load deliveries.': 'تعذر تحميل التوصيلات.',
+  'Unable to load products.': 'تعذر تحميل المنتجات.',
+  'Unable to load categories and brands.':
+      'تعذر تحميل الفئات والعلامات التجارية.',
+  'Unable to load promotions.': 'تعذر تحميل العروض الترويجية.',
+  'Unable to load reviews awaiting moderation.':
+      'تعذر تحميل التقييمات التي تنتظر المراجعة.',
+  'Enter a valid price.': 'أدخل سعراً صحيحاً.',
+  'Enter a valid stock adjustment.': 'أدخل تعديلاً صحيحاً للمخزون.',
+  'Enter a valid name and slug.': 'أدخل اسماً ومعرّفاً صحيحين.',
+  'Enter a valid promotion value.': 'أدخل قيمة عرض صحيحة.',
+  'The request failed ({status}).': 'فشل الطلب ({status}).',
+  'Mark {status}': 'تعيين الحالة: {status}',
+  'Order {id}': 'الطلب {id}',
+  '{quantity} units': '{quantity} وحدة',
+  'minutes': 'دقيقة',
+  'redemptions': 'عملية استخدام',
+  'Standard': 'عادي',
+  'Express': 'سريع',
+  'Activate': 'تفعيل',
+  'Deactivate': 'إيقاف التفعيل',
+  'Enter your password': 'أدخل كلمة المرور',
+  'Required': 'مطلوب',
+  'in_stock': 'متوفر',
+  'out_of_stock': 'نفد المخزون',
+};
+
 const _translations = <String, String>{
   'Sign out': 'تسجيل الخروج',
   'Home': 'المنزل',
+  'More': 'المزيد',
   'Customer': 'العميل',
   'Product': 'المنتج',
   'Catalog': 'الكتالوج',
@@ -23,13 +137,15 @@ const _translations = <String, String>{
   'Bulk Packs': 'عبوات كبيرة',
   'Customer Care': 'خدمة العملاء',
   'Addresses': 'العناوين',
-  'Manage delivery addresses and defaults': 'إدارة عناوين التوصيل والعنوان الافتراضي',
+  'Manage delivery addresses and defaults':
+      'إدارة عناوين التوصيل والعنوان الافتراضي',
   'Checkout': 'إتمام الطلب',
   'Review delivery and payment details': 'مراجعة تفاصيل التوصيل والدفع',
   'Cart': 'السلة',
   'Review order total before checkout': 'مراجعة إجمالي الطلب قبل إتمامه',
   'Orders': 'الطلبات',
-  'View, cancel, or reorder your purchases': 'عرض مشترياتك أو إلغاؤها أو إعادة طلبها',
+  'View, cancel, or reorder your purchases':
+      'عرض مشترياتك أو إلغاؤها أو إعادة طلبها',
   'Notifications': 'الإشعارات',
   'Order and payment updates': 'تحديثات الطلبات والمدفوعات',
   'Sign in': 'تسجيل الدخول',
@@ -42,11 +158,19 @@ const _translations = <String, String>{
   'Password': 'كلمة المرور',
   'Enter your first name': 'أدخل اسمك الأول',
   'Enter your last name': 'أدخل اسم العائلة',
+  'Enter your password': 'أدخل كلمة المرور',
   'Enter a valid email': 'أدخل بريداً إلكترونياً صحيحاً',
   'Password must be at least 8 characters': 'يجب ألا تقل كلمة المرور عن 8 أحرف',
+  'Password must include a letter, number, and symbol':
+      'يجب أن تحتوي كلمة المرور على حرف ورقم ورمز',
+  'Unable to reach the AquaFlow server. Check the API URL and network.':
+      'تعذر الاتصال بخادم أكوافلو. تحقق من رابط الخادم والاتصال بالشبكة.',
+  'The server is temporarily unavailable. Please try again later.':
+      'الخادم غير متاح مؤقتاً. يرجى المحاولة لاحقاً.',
   'Retry': 'إعادة المحاولة',
   'Too many requests': 'طلبات كثيرة جداً. يرجى المحاولة لاحقاً.',
-  'No addresses yet. Add your first delivery address.': 'لا توجد عناوين بعد. أضف عنوان التوصيل الأول.',
+  'No addresses yet. Add your first delivery address.':
+      'لا توجد عناوين بعد. أضف عنوان التوصيل الأول.',
   'Edit': 'تعديل',
   'Set default': 'تعيين كافتراضي',
   'Delete': 'حذف',
@@ -81,8 +205,10 @@ const _translations = <String, String>{
   'Delivery option': 'خيار التوصيل',
   'Payment method': 'طريقة الدفع',
   'Promotion code (optional)': 'رمز العرض (اختياري)',
-  'Card payment processing is not available yet. The order will remain payment pending.': 'معالجة الدفع بالبطاقة غير متاحة حالياً. سيبقى الطلب بانتظار الدفع.',
-  'Review your checkout before placing the order.': 'راجع تفاصيل طلبك قبل تأكيده.',
+  'Card payment processing is not available yet. The order will remain payment pending.':
+      'معالجة الدفع بالبطاقة غير متاحة حالياً. سيبقى الطلب بانتظار الدفع.',
+  'Review your checkout before placing the order.':
+      'راجع تفاصيل طلبك قبل تأكيده.',
   'Standard': 'عادي',
   'Express': 'سريع',
   'Card': 'بطاقة',
@@ -99,8 +225,10 @@ const _translations = <String, String>{
   'Payment could not be started: {error}': 'تعذر بدء الدفع: {error}',
   'Tracking code: {code}': 'رمز التتبع: {code}',
   'Estimated time: {minutes} minutes': 'الوقت المتوقع: {minutes} دقيقة',
-  'Live driver tracking is not available yet.': 'تتبع السائق المباشر غير متاح حالياً.',
-  'Delivery information is unavailable: {error}': 'معلومات التوصيل غير متاحة: {error}',
+  'Live driver tracking is not available yet.':
+      'تتبع السائق المباشر غير متاح حالياً.',
+  'Delivery information is unavailable: {error}':
+      'معلومات التوصيل غير متاحة: {error}',
   'Review a delivered product': 'تقييم منتج تم توصيله',
   'Rating: {rating} / 5': 'التقييم: {rating} / 5',
   'Comment (optional)': 'تعليق (اختياري)',
@@ -115,8 +243,10 @@ const _translations = <String, String>{
   'Payment in progress': 'الدفع قيد التنفيذ',
   'Starting...': 'جارٍ البدء…',
   'Start payment': 'بدء الدفع',
-  'Payment intent created by {provider}; no payment was taken and no provider checkout is configured.': 'تم إنشاء طلب دفع عبر {provider}؛ لم يتم تحصيل أي مبلغ ولم يتم إعداد بوابة دفع.',
-  'Payment intent created. Continue through the provider checkout.': 'تم إنشاء طلب الدفع. أكمل عبر صفحة مزود الدفع.',
+  'Payment intent created by {provider}; no payment was taken and no provider checkout is configured.':
+      'تم إنشاء طلب دفع عبر {provider}؛ لم يتم تحصيل أي مبلغ ولم يتم إعداد بوابة دفع.',
+  'Payment intent created. Continue through the provider checkout.':
+      'تم إنشاء طلب الدفع. أكمل عبر صفحة مزود الدفع.',
   'Delivery {status}': 'حالة التوصيل: {status}',
   'You have no orders yet.': 'ليس لديك طلبات بعد.',
   'Could not update notification: {error}': 'تعذر تحديث الإشعار: {error}',
@@ -124,42 +254,82 @@ const _translations = <String, String>{
   'Mark as read': 'تحديد كمقروء',
   'Order placed': 'تم استلام الطلب',
   'Your order is awaiting payment.': 'طلبك بانتظار الدفع.',
-  'Your cash-on-delivery order has been placed.': 'تم استلام طلبك للدفع عند الاستلام.',
+  'Your cash-on-delivery order has been placed.':
+      'تم استلام طلبك للدفع عند الاستلام.',
   'Order cancelled': 'تم إلغاء الطلب',
   'Your order has been cancelled.': 'تم إلغاء طلبك.',
   'Payment received': 'تم استلام الدفع',
   'Payment failed': 'فشل الدفع',
   'Payment for your order was confirmed.': 'تم تأكيد الدفع لطلبك.',
-  'Payment was not completed. You can try another payment attempt.': 'لم تكتمل عملية الدفع. يمكنك المحاولة مجدداً.',
+  'Payment was not completed. You can try another payment attempt.':
+      'لم تكتمل عملية الدفع. يمكنك المحاولة مجدداً.',
   'Order is ready for delivery dispatch': 'الطلب جاهز للإرسال للتوصيل',
   'Order was cancelled before dispatch': 'تم إلغاء الطلب قبل إرساله للتوصيل',
   'Your cart is empty': 'سلتك فارغة',
-  'Add bottled water and bulk packs to begin': 'أضف المياه المعبأة والعبوات الكبيرة للبدء',
+  'Add bottled water and bulk packs to begin':
+      'أضف المياه المعبأة والعبوات الكبيرة للبدء',
+  'Browse products': 'تصفح المنتجات',
+  '{count} items': '{count} منتجات',
+  'SAR {price} each': '{price} ريال للقطعة',
+  'Decrease quantity': 'تقليل الكمية',
+  'Increase quantity': 'زيادة الكمية',
+  'Product details': 'تفاصيل المنتج',
+  'In stock': 'متوفر',
+  'Out of stock': 'نفد المخزون',
+  'Administrator sign in': 'تسجيل دخول المسؤول',
+  'Delivery could not be completed': 'تعذر إكمال التوصيل',
+  'Select a delivery address and zone before continuing.':
+      'اختر عنوان التوصيل ومنطقة التوصيل للمتابعة.',
+  'No delivery zones are configured for {city}.':
+      'لا توجد مناطق توصيل مهيأة لمدينة {city}.',
+  'The order could not be completed.': 'تعذر إكمال الطلب.',
+  'Available quantity': 'الكمية المتاحة',
+  'Add {quantity} to cart': 'أضف {quantity} إلى السلة',
+  'Offers': 'عروض',
+  'Shop now': 'تسوق الآن',
+  'Featured products': 'منتجات مختارة',
+  'Explore categories': 'تصفح الفئات',
+  'No products available right now.': 'لا توجد منتجات متاحة حالياً.',
+  'A discount is available': 'خصم متاح',
+  'Search AquaFlow products': 'ابحث عن منتجات أكوافلو',
+  'Brand': 'العلامة التجارية',
+  'Compare at SAR {price}': 'السعر السابق {price} ريال',
   'Qty {quantity} • SAR {price}': 'الكمية {quantity} • {price} ريال',
   'Remove item': 'إزالة المنتج',
   'Discount': 'الخصم',
   'Total': 'الإجمالي',
   'Proceed to checkout': 'المتابعة لإتمام الطلب',
+  'Switch to English': 'التبديل إلى الإنجليزية',
+  'Switch to Arabic': 'التبديل إلى العربية',
   'Language: English': 'اللغة: العربية',
   'Language: Arabic': 'Language: English',
-  'Language preference could not be saved: {error}': 'تعذر حفظ إعداد اللغة: {error}',
+  'Language preference could not be saved: {error}':
+      'تعذر حفظ إعداد اللغة: {error}',
   'Sign in is required to view your cart.': 'سجل الدخول لعرض سلتك.',
   'Sign in is required to update your cart.': 'سجل الدخول لتحديث سلتك.',
-  'Sign in is required to manage addresses or checkout.': 'سجل الدخول لإدارة العناوين أو إتمام الطلب.',
+  'Sign in is required to manage addresses or checkout.':
+      'سجل الدخول لإدارة العناوين أو إتمام الطلب.',
   'Invalid email or password': 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
-  'Customer with this email already exists': 'يوجد حساب مسجل بهذا البريد الإلكتروني',
-  'Email, password, first name, and last name are required': 'البريد الإلكتروني وكلمة المرور والاسم الأول واسم العائلة مطلوبة',
+  'Customer with this email already exists':
+      'يوجد حساب مسجل بهذا البريد الإلكتروني',
+  'Email, password, first name, and last name are required':
+      'البريد الإلكتروني وكلمة المرور والاسم الأول واسم العائلة مطلوبة',
   'Checkout session not found': 'جلسة إتمام الطلب غير موجودة',
-  'Delivery is not available for this order': 'معلومات التوصيل غير متاحة لهذا الطلب',
+  'Delivery is not available for this order':
+      'معلومات التوصيل غير متاحة لهذا الطلب',
   'Notification not found': 'الإشعار غير موجود',
   'Unable to load cart': 'تعذر تحميل السلة',
-  'Something went wrong. Please try again.': 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
-  'Unable to load this information. Please try again.': 'تعذر تحميل هذه المعلومات. يرجى المحاولة مرة أخرى.',
+  'Something went wrong. Please try again.':
+      'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
+  'Unable to load this information. Please try again.':
+      'تعذر تحميل هذه المعلومات. يرجى المحاولة مرة أخرى.',
   'A product could not be found.': 'تعذر العثور على المنتج.',
   'The requested item is no longer available.': 'العنصر المطلوب لم يعد متاحاً.',
   'This action is not available right now.': 'هذا الإجراء غير متاح حالياً.',
-  'Your session has expired. Please sign in again.': 'انتهت جلستك. يرجى تسجيل الدخول مجدداً.',
-  'Please check the information and try again.': 'يرجى مراجعة المعلومات والمحاولة مرة أخرى.',
+  'Your session has expired. Please sign in again.':
+      'انتهت جلستك. يرجى تسجيل الدخول مجدداً.',
+  'Please check the information and try again.':
+      'يرجى مراجعة المعلومات والمحاولة مرة أخرى.',
 };
 
 const _arabicStatuses = <String, String>{
@@ -198,7 +368,8 @@ const _englishStatuses = <String, String>{
   'card': 'Card',
 };
 
-String localized(BuildContext context, String message, [Map<String, Object> values = const {}]) {
+String localized(BuildContext context, String message,
+    [Map<String, Object> values = const {}]) {
   var result = Localizations.localeOf(context).languageCode == 'ar'
       ? (_translations[message] ?? message)
       : message;
@@ -208,33 +379,104 @@ String localized(BuildContext context, String message, [Map<String, Object> valu
   return result;
 }
 
+String localizedAdmin(
+  BuildContext context,
+  String message, [
+  Map<String, Object> values = const {},
+]) {
+  final isArabic = Localizations.localeOf(context).languageCode == 'ar';
+  var result = isArabic
+      ? (_adminTranslations[message] ?? _translations[message] ?? message)
+      : message;
+  for (final entry in values.entries) {
+    result = result.replaceAll('{${entry.key}}', entry.value.toString());
+  }
+  return result;
+}
+
 String localizedStatus(BuildContext context, String status) {
-  final labels = Localizations.localeOf(context).languageCode == 'ar'
-      ? _arabicStatuses
-      : _englishStatuses;
+  final isArabic = Localizations.localeOf(context).languageCode == 'ar';
+  final labels = isArabic ? _arabicStatuses : _englishStatuses;
+  if (isArabic && _adminTranslations.containsKey(status)) {
+    return _adminTranslations[status]!;
+  }
   return labels[status] ?? status.replaceAll('_', ' ');
 }
 
 String localizedError(BuildContext context, Object error) {
-  Object? payload;
   if (error is DioException) {
-    payload = error.response?.data;
-  } else {
-    final message = error.toString().replaceFirst(
-          RegExp(r'^(Exception|StateError):\s*'),
-          '',
-        );
-    return _knownError(context, message);
+    final response = error.response;
+    if (response == null) {
+      return localized(
+        context,
+        'Unable to reach the AquaFlow server. Check the API URL and network.',
+      );
+    }
+    if (response.statusCode != null && response.statusCode! >= 500) {
+      return localized(
+        context,
+        'The server is temporarily unavailable. Please try again later.',
+      );
+    }
+    return _localizedResponseError(context, response.data);
   }
+  final message = error.toString().replaceFirst(
+        RegExp(r'^(Exception|StateError):\s*'),
+        '',
+      );
+  return _knownError(context, message);
+}
+
+String _localizedResponseError(BuildContext context, Object? payload) {
   if (payload is Map<String, dynamic>) {
     final message = payload['message'];
     if (message is String) return _knownError(context, message);
     if (message is List) {
-      final known = message.whereType<String>().map((item) => _knownError(context, item)).toList();
+      final known = message
+          .whereType<String>()
+          .map((item) => _knownValidationError(context, item))
+          .whereType<String>()
+          .toSet()
+          .toList();
+      if (known.contains(
+          localized(context, 'Password must be at least 8 characters'))) {
+        return localized(context, 'Password must be at least 8 characters');
+      }
       if (known.isNotEmpty) return known.join('\n');
     }
   }
-  return localized(context, 'Something went wrong. Please try again.');
+  return localized(context, 'Please check the information and try again.');
+}
+
+String? _knownValidationError(BuildContext context, String message) {
+  final normalized = message.trim().toLowerCase();
+  if (normalized == 'email must be an email' ||
+      normalized == 'email should not be empty' ||
+      normalized == 'email must be a string') {
+    return localized(context, 'Enter a valid email');
+  }
+  if (normalized == 'password must be longer than or equal to 8 characters') {
+    return localized(context, 'Password must be at least 8 characters');
+  }
+  if (normalized == 'password must include a letter, number, and symbol') {
+    return localized(
+      context,
+      'Password must include a letter, number, and symbol',
+    );
+  }
+  if (normalized == 'password should not be empty' ||
+      normalized == 'password must be a string') {
+    return localized(context, 'Enter your password');
+  }
+  if (normalized == 'firstname should not be empty' ||
+      normalized == 'firstname must be a string') {
+    return localized(context, 'Enter your first name');
+  }
+  if (normalized == 'lastname should not be empty' ||
+      normalized == 'lastname must be a string') {
+    return localized(context, 'Enter your last name');
+  }
+  return null;
 }
 
 String _knownError(BuildContext context, String message) {
@@ -257,7 +499,8 @@ String _knownError(BuildContext context, String message) {
   if (message.contains('Product not found')) {
     return localized(context, 'A product could not be found.');
   }
-  if (message.contains('not found') || message.contains('no longer available')) {
+  if (message.contains('not found') ||
+      message.contains('no longer available')) {
     return localized(context, 'The requested item is no longer available.');
   }
   return localized(context, 'Please check the information and try again.');
@@ -289,7 +532,7 @@ class AppLocaleController extends StateNotifier<Locale> {
   AppLocaleController({
     LocalePreferenceStore store = const SecureLocalePreferenceStore(),
   })  : _store = store,
-        super(const Locale('en')) {
+        super(const Locale('ar')) {
     _restore();
   }
 
@@ -299,7 +542,9 @@ class AppLocaleController extends StateNotifier<Locale> {
   Future<void> _restore() async {
     try {
       final saved = await _store.read();
-      if (!_changedByUser && saved != null && (saved == 'en' || saved == 'ar')) {
+      if (!_changedByUser &&
+          saved != null &&
+          (saved == 'en' || saved == 'ar')) {
         state = Locale(saved);
       }
     } catch (error) {
@@ -316,28 +561,41 @@ class AppLocaleController extends StateNotifier<Locale> {
 }
 
 class LanguageSwitch extends ConsumerWidget {
-  const LanguageSwitch({super.key});
+  const LanguageSwitch({this.compact = false, super.key});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final language = Localizations.localeOf(context).languageCode;
-    return TextButton(
-      onPressed: () async {
-        try {
-          await ref.read(appLocaleProvider.notifier).toggle();
-        } catch (error) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(localized(
-                context,
-                'Language preference could not be saved: {error}',
-                {'error': error},
-              ))),
-            );
-          }
+    Future<void> toggle() async {
+      try {
+        await ref.read(appLocaleProvider.notifier).toggle();
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(localized(
+              context,
+              'Language preference could not be saved: {error}',
+              {'error': error},
+            ))),
+          );
         }
-      },
-      child: Text(localized(context, language == 'en' ? 'Language: English' : 'Language: Arabic')),
+      }
+    }
+
+    final label = localized(
+      context,
+      language == 'en' ? 'Switch to Arabic' : 'Switch to English',
     );
+    if (compact) {
+      return IconButton(
+        tooltip: label,
+        onPressed: toggle,
+        icon: const Icon(Icons.translate_rounded),
+      );
+    }
+    return TextButton(onPressed: toggle, child: Text(label));
   }
 }

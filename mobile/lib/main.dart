@@ -6,8 +6,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
 import 'api_config.dart';
+import 'admin/admin_api.dart';
+import 'admin/admin_mobile.dart';
 import 'cart_screen.dart';
 import 'catalog_screen.dart';
+import 'customer_ui.dart';
 import 'localization.dart';
 
 void main() {
@@ -15,6 +18,11 @@ void main() {
 }
 
 final _secureStorage = FlutterSecureStorage();
+final AdminApi _adminApi = AdminApiClient();
+final ThemeData _adminTheme = ThemeData(
+  colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E9F6E)),
+  useMaterial3: true,
+);
 
 Address? _findAddress(List<Address> addresses, String? addressId) {
   for (final address in addresses) {
@@ -68,8 +76,11 @@ class Address {
       building: json['building']?.toString() ?? '',
       apartment: json['apartment']?.toString(),
       floor: json['floor']?.toString(),
-      latitude: json['latitude'] is num ? (json['latitude'] as num).toDouble() : null,
-      longitude: json['longitude'] is num ? (json['longitude'] as num).toDouble() : null,
+      latitude:
+          json['latitude'] is num ? (json['latitude'] as num).toDouble() : null,
+      longitude: json['longitude'] is num
+          ? (json['longitude'] as num).toDouble()
+          : null,
       notes: json['notes']?.toString(),
       isDefault: json['isDefault'] == true,
     );
@@ -309,7 +320,8 @@ class DeliveryZone {
 
 class ApiClient {
   ApiClient._();
-  static final Dio dio = Dio(BaseOptions(baseUrl: apiBaseUrl, headers: {'Content-Type': 'application/json'}));
+  static final Dio dio = Dio(BaseOptions(
+      baseUrl: apiBaseUrl, headers: {'Content-Type': 'application/json'}));
 
   static Future<void> authenticate({
     required bool register,
@@ -329,8 +341,10 @@ class ApiClient {
             }
           : {'email': email, 'password': password},
     );
-    await _secureStorage.write(key: 'auth_token', value: response.data['accessToken'] as String);
-    await _secureStorage.write(key: 'refresh_token', value: response.data['refreshToken'] as String);
+    await _secureStorage.write(
+        key: 'auth_token', value: response.data['accessToken'] as String);
+    await _secureStorage.write(
+        key: 'refresh_token', value: response.data['refreshToken'] as String);
   }
 
   static Future<String> readToken() async {
@@ -348,7 +362,9 @@ class ApiClient {
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
     final items = (response.data['items'] as List? ?? []);
-    return items.map((item) => Address.fromJson(item as Map<String, dynamic>)).toList();
+    return items
+        .map((item) => Address.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
   static Future<List<String>> fetchCities() async {
@@ -376,7 +392,8 @@ class ApiClient {
         .toList();
   }
 
-  static Future<void> saveAddress(Map<String, dynamic> payload, {String? addressId}) async {
+  static Future<void> saveAddress(Map<String, dynamic> payload,
+      {String? addressId}) async {
     final token = await readToken();
     final options = Options(headers: {'Authorization': 'Bearer $token'});
     if (addressId != null) {
@@ -419,7 +436,8 @@ class ApiClient {
     return OrderRecord.fromJson(response.data as Map<String, dynamic>);
   }
 
-  static Future<List<OrderRecord>> fetchOrders({int page = 1, int limit = 20}) async {
+  static Future<List<OrderRecord>> fetchOrders(
+      {int page = 1, int limit = 20}) async {
     final token = await readToken();
     final response = await dio.get(
       '/orders',
@@ -484,7 +502,8 @@ class ApiClient {
     );
   }
 
-  static Future<List<CustomerNotification>> fetchNotifications({int limit = 50}) async {
+  static Future<List<CustomerNotification>> fetchNotifications(
+      {int limit = 50}) async {
     final token = await readToken();
     final response = await dio.get(
       '/notifications',
@@ -493,7 +512,8 @@ class ApiClient {
     );
     final items = response.data['items'] as List? ?? [];
     return items
-        .map((item) => CustomerNotification.fromJson(item as Map<String, dynamic>))
+        .map((item) =>
+            CustomerNotification.fromJson(item as Map<String, dynamic>))
         .toList();
   }
 
@@ -531,12 +551,14 @@ class AddressState {
   }
 }
 
-final addressProvider = StateNotifierProvider<AddressController, AddressState>((ref) {
+final addressProvider =
+    StateNotifierProvider<AddressController, AddressState>((ref) {
   return AddressController();
 });
 
 class AddressController extends StateNotifier<AddressState> {
-  AddressController() : super(const AddressState(items: [], loading: false, error: null));
+  AddressController()
+      : super(const AddressState(items: [], loading: false, error: null));
 
   Future<void> load() async {
     state = state.copyWith(loading: true, clearError: true);
@@ -597,9 +619,19 @@ class AddressController extends StateNotifier<AddressState> {
   }
 }
 
-final appRouter = GoRouter(
+final GoRouter appRouter = GoRouter(
   initialLocation: '/login',
   redirect: (_, state) async {
+    if (state.matchedLocation.startsWith('/admin')) {
+      final hasAdminSession = await _adminApi.hasStoredSession();
+      if (state.matchedLocation == '/admin/login' && hasAdminSession) {
+        return '/admin';
+      }
+      if (state.matchedLocation == '/admin' && !hasAdminSession) {
+        return '/admin/login';
+      }
+      return null;
+    }
     final token = await _secureStorage.read(key: 'auth_token');
     final atLogin = state.matchedLocation == '/login';
     if ((token == null || token.isEmpty) && !atLogin) return '/login';
@@ -612,6 +644,26 @@ final appRouter = GoRouter(
       builder: (_, __) => const LoginScreen(),
     ),
     GoRoute(
+      path: '/admin/login',
+      builder: (_, __) => Theme(
+        data: _adminTheme,
+        child: AdminLoginScreen(
+          api: _adminApi,
+          onSignedIn: () => appRouter.go('/admin'),
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/admin',
+      builder: (_, __) => Theme(
+        data: _adminTheme,
+        child: AdminRouteGate(
+          api: _adminApi,
+          child: AdminHomeScreen(api: _adminApi),
+        ),
+      ),
+    ),
+    GoRoute(
       path: '/',
       builder: (_, __) => const HomeScreen(),
     ),
@@ -621,7 +673,16 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/catalog',
-      builder: (_, __) => const CatalogScreen(),
+      builder: (_, state) => CatalogScreen(
+        initialCategoryId: state.extra as String?,
+      ),
+    ),
+    GoRoute(
+      path: '/product/:productId',
+      builder: (_, state) => ProductDetailScreen(
+        productId: state.pathParameters['productId']!,
+        initialProduct: state.extra as CatalogProduct?,
+      ),
     ),
     GoRoute(
       path: '/addresses',
@@ -633,7 +694,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/addresses/:addressId/edit',
-      builder: (_, state) => AddressEditorScreen(address: state.extra as Address?),
+      builder: (_, state) =>
+          AddressEditorScreen(address: state.extra as Address?),
     ),
     GoRoute(
       path: '/checkout',
@@ -666,102 +728,335 @@ class AquaFlowApp extends ConsumerWidget {
         GlobalMaterialLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E9F6E)),
-        useMaterial3: true,
-      ),
+      theme: AquaFlowCustomerTheme.theme,
     );
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final Dio _dio = Dio(BaseOptions(baseUrl: apiBaseUrl));
+  List<CatalogCategory> _categories = [];
+  List<CatalogProduct> _products = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHome();
+  }
+
+  @override
+  void dispose() {
+    _dio.close();
+    super.dispose();
+  }
+
+  Future<void> _loadHome() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final responses = await Future.wait([
+        _dio.get<Map<String, dynamic>>('/catalog/categories'),
+        _dio.get<Map<String, dynamic>>(
+          '/catalog/products',
+          queryParameters: {'page': 1, 'limit': 8, 'sort': 'newest'},
+        ),
+      ]);
+      if (!mounted) return;
+      final categoryData = responses[0].data ?? {};
+      final productData = responses[1].data ?? {};
+      setState(() {
+        _categories = (categoryData['items'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map(CatalogCategory.fromJson)
+            .toList();
+        _products = (productData['items'] as List? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map(CatalogProduct.fromJson)
+            .toList();
+        _loading = false;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = localizedError(context, error);
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final productWidth = ((width - 44) / 2).clamp(132.0, 280.0);
+    final discountedProducts = _products
+        .where((product) =>
+            product.compareAtPrice != null &&
+            product.compareAtPrice! > product.price)
+        .toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('AquaFlow'),
         actions: [
-          const LanguageSwitch(),
+          const LanguageSwitch(compact: true),
+          IconButton(
+            tooltip: localized(context, 'Cart'),
+            onPressed: () => context.go('/cart'),
+            icon: const Icon(Icons.shopping_bag_outlined),
+          ),
           IconButton(
             tooltip: localized(context, 'Sign out'),
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
             onPressed: () async {
               await _secureStorage.delete(key: 'auth_token');
               await _secureStorage.delete(key: 'refresh_token');
+              ref.invalidate(cartProvider);
               if (context.mounted) context.go('/login');
             },
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: RefreshIndicator(
+        onRefresh: _loadHome,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
           children: [
-            Text(
-              localized(context, 'Fresh water, delivered with care'),
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: AlignmentDirectional.topStart,
+                  end: AlignmentDirectional.bottomEnd,
+                  colors: [Color(0xFF075C69), Color(0xFF0A8E91)],
+                ),
+                borderRadius: BorderRadius.circular(26),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      localized(context, 'Fresh water, delivered with care'),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                              ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      localized(
+                          context, 'Browse and add products to your cart'),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.88),
+                          ),
+                    ),
+                    const SizedBox(height: 18),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => context.go('/catalog'),
+                      child: IgnorePointer(
+                        child: TextField(
+                          readOnly: true,
+                          decoration: InputDecoration(
+                            hintText:
+                                localized(context, 'Search AquaFlow products'),
+                            prefixIcon: const Icon(Icons.search_rounded),
+                            filled: true,
+                            fillColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 22),
+            SectionHeading(
+              title: localized(context, 'Explore categories'),
+              action: localized(context, 'Shop now'),
+              onAction: () => context.go('/catalog'),
+            ),
+            const SizedBox(height: 10),
+            if (_loading && _categories.isEmpty)
+              const LinearProgressIndicator()
+            else if (_categories.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _categories
+                    .map(
+                      (category) => ActionChip(
+                        avatar: const Icon(Icons.water_drop_outlined, size: 18),
+                        label: Text(category.displayName(
+                          Localizations.localeOf(context).languageCode,
+                        )),
+                        onPressed: () => context.go(
+                          '/catalog',
+                          extra: category.id,
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            if (discountedProducts.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              SectionHeading(
+                title: localized(context, 'Offers'),
+                action: localized(context, 'Shop now'),
+                onAction: () => context.go('/catalog'),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: discountedProducts
+                    .map(
+                      (product) => SizedBox(
+                        width: productWidth,
+                        child: CatalogProductCard(product: product),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+            const SizedBox(height: 24),
+            SectionHeading(
+              title: localized(context, 'Featured products'),
+              action: localized(context, 'Shop now'),
+              onAction: () => context.go('/catalog'),
+            ),
+            const SizedBox(height: 10),
+            if (_loading && _products.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_error != null && _products.isEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Text(_error!),
+                      const SizedBox(height: 10),
+                      OutlinedButton(
+                        onPressed: _loadHome,
+                        child: Text(localized(context, 'Retry')),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_products.isEmpty)
+              Text(localized(context, 'No products available right now.'))
+            else
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: _products
+                    .map(
+                      (product) => SizedBox(
+                        width: productWidth,
+                        child: CatalogProductCard(product: product),
+                      ),
+                    )
+                    .toList(),
+              ),
+            const SizedBox(height: 24),
+            SectionHeading(title: localized(context, 'More')),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 12,
               runSpacing: 12,
               children: [
-                _FeatureChip(label: localized(context, 'Bottled Water')),
-                _FeatureChip(label: localized(context, 'Bulk Packs')),
-                _FeatureChip(label: localized(context, 'Delivery')),
-                _FeatureChip(label: localized(context, 'Customer Care')),
+                _HomeAction(
+                  width: productWidth,
+                  icon: Icons.location_on_outlined,
+                  title: localized(context, 'Addresses'),
+                  onPressed: () => context.go('/addresses'),
+                ),
+                _HomeAction(
+                  width: productWidth,
+                  icon: Icons.receipt_long_outlined,
+                  title: localized(context, 'Orders'),
+                  onPressed: () => context.go('/orders'),
+                ),
+                _HomeAction(
+                  width: productWidth,
+                  icon: Icons.notifications_outlined,
+                  title: localized(context, 'Notifications'),
+                  onPressed: () => context.go('/notifications'),
+                ),
+                _HomeAction(
+                  width: productWidth,
+                  icon: Icons.shopping_cart_outlined,
+                  title: localized(context, 'Cart'),
+                  onPressed: () => context.go('/cart'),
+                ),
               ],
-            ),
-            const SizedBox(height: 24),
-            _ActionCard(
-              icon: Icons.water_drop_outlined,
-              title: localized(context, 'Catalog'),
-              subtitle: localized(context, 'Browse and add products to your cart'),
-              onPressed: () => context.go('/catalog'),
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              icon: Icons.location_on_outlined,
-              title: localized(context, 'Addresses'),
-              subtitle: localized(context, 'Manage delivery addresses and defaults'),
-              onPressed: () => context.go('/addresses'),
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              icon: Icons.payment_outlined,
-              title: localized(context, 'Checkout'),
-              subtitle: localized(context, 'Review delivery and payment details'),
-              onPressed: () => context.go('/checkout'),
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              icon: Icons.shopping_cart_outlined,
-              title: localized(context, 'Cart'),
-              subtitle: localized(context, 'Review order total before checkout'),
-              onPressed: () => context.go('/cart'),
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              icon: Icons.receipt_long_outlined,
-              title: localized(context, 'Orders'),
-              subtitle: localized(context, 'View, cancel, or reorder your purchases'),
-              onPressed: () => context.go('/orders'),
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              icon: Icons.notifications_outlined,
-              title: localized(context, 'Notifications'),
-              subtitle: localized(context, 'Order and payment updates'),
-              onPressed: () => context.go('/notifications'),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+class _HomeAction extends StatelessWidget {
+  const _HomeAction({
+    required this.width,
+    required this.icon,
+    required this.title,
+    required this.onPressed,
+  });
+
+  final double width;
+  final IconData icon;
+  final String title;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: width,
+        child: Card(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(icon, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class LoginScreen extends StatefulWidget {
@@ -792,7 +1087,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       await ApiClient.authenticate(
         register: _register,
@@ -803,7 +1101,12 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       if (mounted) context.go('/');
     } catch (error) {
-      if (mounted) setState(() { _loading = false; _error = error.toString(); });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = localizedError(context, error);
+        });
+      }
     }
   }
 
@@ -812,7 +1115,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('AquaFlow'),
-        actions: const [LanguageSwitch()],
+        actions: const [LanguageSwitch(compact: true)],
       ),
       body: Center(
         child: ConstrainedBox(
@@ -823,48 +1126,105 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.all(24),
               shrinkWrap: true,
               children: [
-                Text(localized(context, _register ? 'Create account' : 'Sign in'), style: Theme.of(context).textTheme.headlineSmall),
+                Text(
+                    localized(
+                        context, _register ? 'Create account' : 'Sign in'),
+                    style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 20),
                 if (_register) ...[
                   TextFormField(
                     controller: _firstNameController,
-                    decoration: InputDecoration(labelText: localized(context, 'First name')),
-                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? localized(context, 'Enter your first name') : null,
+                    decoration: InputDecoration(
+                        labelText: localized(context, 'First name')),
+                    validator: (value) =>
+                        _register && (value == null || value.trim().isEmpty)
+                            ? localized(context, 'Enter your first name')
+                            : null,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _lastNameController,
-                    decoration: InputDecoration(labelText: localized(context, 'Last name')),
-                    validator: (value) => _register && (value == null || value.trim().isEmpty) ? localized(context, 'Enter your last name') : null,
+                    decoration: InputDecoration(
+                        labelText: localized(context, 'Last name')),
+                    validator: (value) =>
+                        _register && (value == null || value.trim().isEmpty)
+                            ? localized(context, 'Enter your last name')
+                            : null,
                   ),
                   const SizedBox(height: 12),
                 ],
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(labelText: localized(context, 'Email')),
-                  validator: (value) => value == null || !value.contains('@') ? localized(context, 'Enter a valid email') : null,
+                  decoration:
+                      InputDecoration(labelText: localized(context, 'Email')),
+                  validator: (value) => value == null ||
+                          !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                              .hasMatch(value.trim())
+                      ? localized(context, 'Enter a valid email')
+                      : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: InputDecoration(labelText: localized(context, 'Password')),
-                  validator: (value) => value == null || value.length < 8 ? localized(context, 'Password must be at least 8 characters') : null,
+                  decoration: InputDecoration(
+                      labelText: localized(context, 'Password')),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return localized(context, 'Enter your password');
+                    }
+                    if (!_register) return null;
+                    if (value.length < 8) {
+                      return localized(
+                        context,
+                        'Password must be at least 8 characters',
+                      );
+                    }
+                    if (!RegExp(
+                      r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).+$',
+                    ).hasMatch(value)) {
+                      return localized(
+                        context,
+                        'Password must include a letter, number, and symbol',
+                      );
+                    }
+                    return null;
+                  },
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _loading ? null : _submit,
-                  child: _loading ? const CircularProgressIndicator() : Text(localized(context, _register ? 'Create account' : 'Sign in')),
+                  child: _loading
+                      ? const CircularProgressIndicator()
+                      : Text(localized(
+                          context, _register ? 'Create account' : 'Sign in')),
                 ),
                 TextButton(
-                  onPressed: _loading ? null : () => setState(() { _register = !_register; _error = null; }),
-                  child: Text(localized(context, _register ? 'I already have an account' : 'Create an account')),
+                  onPressed: _loading
+                      ? null
+                      : () => setState(() {
+                            _register = !_register;
+                            _error = null;
+                          }),
+                  child: Text(localized(
+                      context,
+                      _register
+                          ? 'I already have an account'
+                          : 'Create an account')),
                 ),
+                if (!_register)
+                  TextButton(
+                    onPressed:
+                        _loading ? null : () => context.go('/admin/login'),
+                    child: Text(localized(context, 'Administrator sign in')),
+                  ),
               ],
             ),
           ),
@@ -895,7 +1255,7 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Addresses')),
-        actions: const [LanguageSwitch()],
+        actions: const [LanguageSwitch(compact: true)],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.push('/addresses/new'),
@@ -911,7 +1271,8 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                       Text(localizedError(context, state.error!)),
                       const SizedBox(height: 12),
                       FilledButton(
-                        onPressed: () => ref.read(addressProvider.notifier).load(),
+                        onPressed: () =>
+                            ref.read(addressProvider.notifier).load(),
                         child: Text(localized(context, 'Retry')),
                       ),
                     ],
@@ -919,46 +1280,69 @@ class _AddressListScreenState extends ConsumerState<AddressListScreen> {
                 )
               : state.items.isEmpty
                   ? Center(
-                      child: Text(localized(context, 'No addresses yet. Add your first delivery address.')),
+                      child: Text(localized(context,
+                          'No addresses yet. Add your first delivery address.')),
                     )
                   : ListView.builder(
                       itemCount: state.items.length,
                       itemBuilder: (_, index) {
                         final item = state.items[index];
                         return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
                           child: ListTile(
                             title: Text(item.label),
-                            subtitle: Text('${item.recipientName}\n${item.city}, ${item.district}\n${item.street}, ${item.building}${item.apartment != null ? ' - ${localized(context, 'Apt {apartment}', {'apartment': item.apartment!})}' : ''}'),
+                            subtitle: Text(
+                                '${item.recipientName}\n${item.city}, ${item.district}\n${item.street}, ${item.building}${item.apartment != null ? ' - ${localized(context, 'Apt {apartment}', {
+                                        'apartment': item.apartment!
+                                      })}' : ''}'),
                             isThreeLine: true,
                             trailing: PopupMenuButton<String>(
                               itemBuilder: (_) => [
-                                PopupMenuItem(value: 'edit', child: Text(localized(context, 'Edit'))),
-                                PopupMenuItem(value: 'default', child: Text(localized(context, 'Set default'))),
-                                PopupMenuItem(value: 'delete', child: Text(localized(context, 'Delete'))),
+                                PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text(localized(context, 'Edit'))),
+                                PopupMenuItem(
+                                    value: 'default',
+                                    child: Text(
+                                        localized(context, 'Set default'))),
+                                PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text(localized(context, 'Delete'))),
                               ],
                               onSelected: (value) async {
                                 if (value == 'edit') {
-                                  context.push('/addresses/${item.id}/edit', extra: item);
+                                  context.push('/addresses/${item.id}/edit',
+                                      extra: item);
                                 }
                                 if (value == 'default') {
                                   try {
-                                    await ref.read(addressProvider.notifier).setDefault(item.id);
+                                    await ref
+                                        .read(addressProvider.notifier)
+                                        .setDefault(item.id);
                                   } catch (_) {
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(localized(context, 'Could not update the default address.'))),
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(localized(context,
+                                                'Could not update the default address.'))),
                                       );
                                     }
                                   }
                                 }
                                 if (value == 'delete') {
                                   try {
-                                    await ref.read(addressProvider.notifier).remove(item.id);
+                                    await ref
+                                        .read(addressProvider.notifier)
+                                        .remove(item.id);
                                   } catch (_) {
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text(localized(context, 'Could not delete the address.'))),
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(localized(context,
+                                                'Could not delete the address.'))),
                                       );
                                     }
                                   }
@@ -980,7 +1364,8 @@ class AddressEditorScreen extends ConsumerStatefulWidget {
   final List<String>? initialCities;
 
   @override
-  ConsumerState<AddressEditorScreen> createState() => _AddressEditorScreenState();
+  ConsumerState<AddressEditorScreen> createState() =>
+      _AddressEditorScreenState();
 }
 
 class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
@@ -1073,8 +1458,9 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(localized(context, widget.address == null ? 'Add address' : 'Edit address')),
-        actions: const [LanguageSwitch()],
+        title: Text(localized(
+            context, widget.address == null ? 'Add address' : 'Edit address')),
+        actions: const [LanguageSwitch(compact: true)],
       ),
       body: Form(
         key: _formKey,
@@ -1083,65 +1469,104 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
           children: [
             if (_loadingCities) const LinearProgressIndicator(),
             if (_error != null) ...[
-              Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              TextButton(onPressed: _loadCities, child: Text(localized(context, 'Retry'))),
+              Text(localizedError(context, _error!),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              TextButton(
+                  onPressed: _loadCities,
+                  child: Text(localized(context, 'Retry'))),
             ],
             TextFormField(
               controller: _labelController,
-              decoration: InputDecoration(labelText: localized(context, 'Label')),
-              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a label') : null,
+              decoration:
+                  InputDecoration(labelText: localized(context, 'Label')),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? localized(context, 'Enter a label')
+                  : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _recipientController,
-              decoration: InputDecoration(labelText: localized(context, 'Recipient name')),
-              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a recipient name') : null,
+              decoration: InputDecoration(
+                  labelText: localized(context, 'Recipient name')),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? localized(context, 'Enter a recipient name')
+                  : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _phoneController,
               keyboardType: TextInputType.phone,
-              decoration: InputDecoration(labelText: localized(context, 'Phone')),
-              validator: (value) => value == null || !RegExp(r'^[+0-9\s-]{7,20}$').hasMatch(value.trim())
+              decoration:
+                  InputDecoration(labelText: localized(context, 'Phone')),
+              validator: (value) => value == null ||
+                      !RegExp(r'^[+0-9\s-]{7,20}$').hasMatch(value.trim())
                   ? localized(context, 'Enter a valid phone number')
                   : null,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: _cities.contains(_cityController.text) ? _cityController.text : null,
-              decoration: InputDecoration(labelText: localized(context, 'City')),
-              items: _cities.map((city) => DropdownMenuItem(value: city, child: Text(city))).toList(),
+              initialValue: _cities.contains(_cityController.text)
+                  ? _cityController.text
+                  : null,
+              decoration:
+                  InputDecoration(labelText: localized(context, 'City')),
+              items: _cities
+                  .map((city) =>
+                      DropdownMenuItem(value: city, child: Text(city)))
+                  .toList(),
               onChanged: (city) => _cityController.text = city ?? '',
-              validator: (value) => value == null ? localized(context, 'Select a configured city') : null,
+              validator: (value) => value == null
+                  ? localized(context, 'Select a configured city')
+                  : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _districtController,
-              decoration: InputDecoration(labelText: localized(context, 'District')),
-              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a district') : null,
+              decoration:
+                  InputDecoration(labelText: localized(context, 'District')),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? localized(context, 'Enter a district')
+                  : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _streetController,
-              decoration: InputDecoration(labelText: localized(context, 'Street')),
-              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a street') : null,
+              decoration:
+                  InputDecoration(labelText: localized(context, 'Street')),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? localized(context, 'Enter a street')
+                  : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _buildingController,
-              decoration: InputDecoration(labelText: localized(context, 'Building')),
-              validator: (value) => value == null || value.trim().isEmpty ? localized(context, 'Enter a building') : null,
+              decoration:
+                  InputDecoration(labelText: localized(context, 'Building')),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? localized(context, 'Enter a building')
+                  : null,
             ),
             const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(child: TextFormField(controller: _apartmentController, decoration: InputDecoration(labelText: localized(context, 'Apartment')))),
+                Expanded(
+                    child: TextFormField(
+                        controller: _apartmentController,
+                        decoration: InputDecoration(
+                            labelText: localized(context, 'Apartment')))),
                 const SizedBox(width: 12),
-                Expanded(child: TextFormField(controller: _floorController, decoration: InputDecoration(labelText: localized(context, 'Floor')))),
+                Expanded(
+                    child: TextFormField(
+                        controller: _floorController,
+                        decoration: InputDecoration(
+                            labelText: localized(context, 'Floor')))),
               ],
             ),
             const SizedBox(height: 12),
-            TextFormField(controller: _notesController, decoration: InputDecoration(labelText: localized(context, 'Notes'))),
+            TextFormField(
+                controller: _notesController,
+                decoration:
+                    InputDecoration(labelText: localized(context, 'Notes'))),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               value: _isDefault,
@@ -1149,37 +1574,54 @@ class _AddressEditorScreenState extends ConsumerState<AddressEditorScreen> {
               title: Text(localized(context, 'Set as default address')),
             ),
             if (_error != null)
-              Text(localizedError(context, _error!), style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(localizedError(context, _error!),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: _saving || _loadingCities ? null : () async {
-                if (!_formKey.currentState!.validate()) return;
-                setState(() { _saving = true; _error = null; });
-                final payload = {
-                  'label': _labelController.text.trim(),
-                  'recipientName': _recipientController.text.trim(),
-                  'phone': _phoneController.text.trim(),
-                  'city': _cityController.text,
-                  'district': _districtController.text.trim(),
-                  'street': _streetController.text.trim(),
-                  'building': _buildingController.text.trim(),
-                  'apartment': _apartmentController.text.trim(),
-                  'floor': _floorController.text.trim(),
-                  'notes': _notesController.text.trim(),
-                  'isDefault': _isDefault,
-                };
-                try {
-                  if (widget.address == null) {
-                    await ref.read(addressProvider.notifier).create(payload);
-                  } else {
-                    await ref.read(addressProvider.notifier).update(payload, widget.address!.id);
-                  }
-                  if (context.mounted) context.pop();
-                } catch (error) {
-                  if (mounted) setState(() { _saving = false; _error = error.toString(); });
-                }
-              },
-              child: _saving ? const CircularProgressIndicator() : Text(localized(context, 'Save address')),
+              onPressed: _saving || _loadingCities
+                  ? null
+                  : () async {
+                      if (!_formKey.currentState!.validate()) return;
+                      setState(() {
+                        _saving = true;
+                        _error = null;
+                      });
+                      final payload = {
+                        'label': _labelController.text.trim(),
+                        'recipientName': _recipientController.text.trim(),
+                        'phone': _phoneController.text.trim(),
+                        'city': _cityController.text,
+                        'district': _districtController.text.trim(),
+                        'street': _streetController.text.trim(),
+                        'building': _buildingController.text.trim(),
+                        'apartment': _apartmentController.text.trim(),
+                        'floor': _floorController.text.trim(),
+                        'notes': _notesController.text.trim(),
+                        'isDefault': _isDefault,
+                      };
+                      try {
+                        if (widget.address == null) {
+                          await ref
+                              .read(addressProvider.notifier)
+                              .create(payload);
+                        } else {
+                          await ref
+                              .read(addressProvider.notifier)
+                              .update(payload, widget.address!.id);
+                        }
+                        if (context.mounted) context.pop();
+                      } catch (error) {
+                        if (mounted) {
+                          setState(() {
+                            _saving = false;
+                            _error = error.toString();
+                          });
+                        }
+                      }
+                    },
+              child: _saving
+                  ? const CircularProgressIndicator()
+                  : Text(localized(context, 'Save address')),
             ),
           ],
         ),
@@ -1200,6 +1642,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String paymentMethod = 'card';
   String promotionCode = '';
   bool loading = true;
+  bool loadingZones = false;
+  int _zoneRequestId = 0;
   CheckoutSummary? summary;
   List<DeliveryZone> zones = [];
   String? selectedAddressId;
@@ -1213,16 +1657,28 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Future<void> _loadCheckoutData() async {
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     await ref.read(addressProvider.notifier).load();
     final addressState = ref.read(addressProvider);
     if (addressState.error != null) {
-      if (mounted) setState(() { loading = false; error = addressState.error; });
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = localizedError(context, addressState.error!);
+        });
+      }
       return;
     }
     final addresses = addressState.items;
     if (addresses.isEmpty) {
-      if (mounted) setState(() { loading = false; });
+      if (mounted) {
+        setState(() {
+          loading = false;
+        });
+      }
       return;
     }
     final selected = addresses.firstWhere(
@@ -1231,20 +1687,43 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     );
     selectedAddressId = selected.id;
     await _loadZones(selected.city);
-    if (mounted) setState(() { loading = false; });
+    if (mounted) {
+      setState(() {
+        loading = false;
+      });
+    }
   }
 
   Future<void> _loadZones(String city) async {
+    final requestId = ++_zoneRequestId;
+    setState(() {
+      loadingZones = true;
+      zones = [];
+      selectedZoneId = null;
+      summary = null;
+      error = null;
+    });
     try {
       final result = await ApiClient.fetchDeliveryZones(city);
-      if (!mounted) return;
+      if (!mounted || requestId != _zoneRequestId) return;
       setState(() {
         zones = result;
         selectedZoneId = result.isEmpty ? null : result.first.id;
-        error = result.isEmpty ? 'No delivery zones are configured for $city.' : null;
+        loadingZones = false;
+        error = result.isEmpty
+            ? localized(context, 'No delivery zones are configured for {city}.',
+                {'city': city})
+            : null;
       });
     } catch (exception) {
-      if (mounted) setState(() { zones = []; selectedZoneId = null; error = exception.toString(); });
+      if (mounted && requestId == _zoneRequestId) {
+        setState(() {
+          zones = [];
+          selectedZoneId = null;
+          loadingZones = false;
+          error = localizedError(context, exception);
+        });
+      }
     }
   }
 
@@ -1252,7 +1731,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final addresses = ref.read(addressProvider).items;
     final selectedAddress = _findAddress(addresses, selectedAddressId);
     if (selectedAddress == null || selectedZoneId == null) {
-      setState(() { error = 'Select a delivery address and zone before continuing.'; });
+      setState(() {
+        error = localized(
+            context, 'Select a delivery address and zone before continuing.');
+      });
       return;
     }
 
@@ -1269,24 +1751,46 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         paymentMethod: paymentMethod,
         promotionCode: promotionCode,
       );
-      if (mounted) setState(() { summary = response; loading = false; });
+      if (mounted) {
+        setState(() {
+          summary = response;
+          loading = false;
+        });
+      }
     } catch (exception) {
-      if (mounted) setState(() { summary = null; loading = false; error = exception.toString(); });
+      if (mounted) {
+        setState(() {
+          summary = null;
+          loading = false;
+          error = localizedError(context, exception);
+        });
+      }
     }
   }
 
   Future<void> placeOrder() async {
     final checkoutId = summary?.checkoutId;
     if (checkoutId == null || checkoutId.isEmpty) {
-      setState(() { error = 'Review your checkout before placing the order.'; });
+      setState(() {
+        error = localized(
+            context, 'Review your checkout before placing the order.');
+      });
       return;
     }
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       await ApiClient.placeOrder(checkoutId);
       if (mounted) context.go('/orders');
     } catch (exception) {
-      if (mounted) setState(() { loading = false; error = exception.toString(); });
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = localizedError(context, exception);
+        });
+      }
     }
   }
 
@@ -1297,136 +1801,228 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Checkout')),
-        actions: const [LanguageSwitch()],
+        actions: const [LanguageSwitch(compact: true)],
       ),
       body: loading && addresses.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(localized(context, 'Delivery address'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          if (addresses.isEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              padding: const EdgeInsets.all(16),
               children: [
-                Text(localized(context, 'No saved addresses.')),
-                TextButton.icon(
-                  onPressed: () async {
-                    await context.push('/addresses/new');
-                    await _loadCheckoutData();
+                Text(localized(context, 'Delivery address'),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                if (addresses.isEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(localized(context, 'No saved addresses.')),
+                      TextButton.icon(
+                        onPressed: () async {
+                          await context.push('/addresses/new');
+                          await _loadCheckoutData();
+                        },
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: Text(localized(context, 'Add address')),
+                      ),
+                    ],
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedAddressId,
+                    decoration: InputDecoration(
+                        labelText: localized(context, 'Choose an address')),
+                    items: addresses
+                        .map((address) => DropdownMenuItem(
+                              value: address.id,
+                              child: Text(
+                                  '${address.label} · ${address.city}, ${address.street}',
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (id) {
+                      final address = _findAddress(addresses, id);
+                      setState(() {
+                        selectedAddressId = id;
+                        selectedZoneId = null;
+                        zones = [];
+                        summary = null;
+                      });
+                      if (address != null) _loadZones(address.city);
+                    },
+                  ),
+                if (loadingZones)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: LinearProgressIndicator(),
+                  ),
+                const SizedBox(height: 20),
+                Text(localized(context, 'Delivery zone'),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: zones.any((zone) => zone.id == selectedZoneId)
+                      ? selectedZoneId
+                      : null,
+                  decoration: InputDecoration(
+                      labelText: localized(context, 'Choose a delivery zone')),
+                  items: zones
+                      .map((zone) => DropdownMenuItem(
+                            value: zone.id,
+                            child: Text(
+                                '${zone.name} · ${localized(context, '{minutes} minutes', {
+                                  'minutes': zone.estimatedMinutes
+                                })}'),
+                          ))
+                      .toList(),
+                  onChanged: loadingZones
+                      ? null
+                      : (id) => setState(() {
+                            selectedZoneId = id;
+                            summary = null;
+                          }),
+                ),
+                const SizedBox(height: 20),
+                Text(localized(context, 'Delivery option'),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                        value: 'standard',
+                        label: Text(localized(context, 'Standard'))),
+                    ButtonSegment(
+                        value: 'express',
+                        label: Text(localized(context, 'Express'))),
+                  ],
+                  selected: {deliveryOption},
+                  onSelectionChanged: (value) => setState(() {
+                    deliveryOption = value.first;
+                    summary = null;
+                  }),
+                ),
+                const SizedBox(height: 20),
+                Text(localized(context, 'Payment method'),
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                        value: 'card', label: Text(localized(context, 'Card'))),
+                    ButtonSegment(
+                        value: 'cash', label: Text(localized(context, 'Cash'))),
+                  ],
+                  selected: {paymentMethod},
+                  onSelectionChanged: (value) => setState(() {
+                    paymentMethod = value.first;
+                    summary = null;
+                  }),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: promotionCode,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: InputDecoration(
+                    labelText: localized(context, 'Promotion code (optional)'),
+                  ),
+                  onChanged: (value) {
+                    promotionCode = value;
+                    if (summary != null) setState(() => summary = null);
                   },
-                  icon: const Icon(Icons.add_location_alt_outlined),
-                  label: Text(localized(context, 'Add address')),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 16),
+                  Text(error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                  TextButton.icon(
+                      onPressed: _loadCheckoutData,
+                      icon: const Icon(Icons.refresh),
+                      label: Text(localized(context, 'Retry'))),
+                ],
+                if (summary != null) ...[
+                  if (paymentMethod == 'card') ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      localized(context,
+                          'Card payment processing is not available yet. The order will remain payment pending.'),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(localized(context, 'Subtotal')),
+                                Text(
+                                    '${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')
+                              ]),
+                          if (summary!.discount > 0) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                      '${localized(context, 'Promotion')}${summary!.promotionCode == null ? '' : ' (${summary!.promotionCode})'}'),
+                                  Text(
+                                      '-${summary!.currency} ${summary!.discount.toStringAsFixed(2)}')
+                                ]),
+                          ],
+                          const SizedBox(height: 8),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(localized(context, 'Delivery')),
+                                Text(
+                                    '${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')
+                              ]),
+                          const SizedBox(height: 8),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(localized(context, 'Service fee')),
+                                Text(
+                                    '${summary!.currency} ${summary!.serviceFee.toStringAsFixed(2)}')
+                              ]),
+                          const Divider(),
+                          Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(localized(context, 'Total'),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold)),
+                                Text(
+                                    '${summary!.currency} ${summary!.total.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold))
+                              ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: loading ||
+                            loadingZones ||
+                            addresses.isEmpty ||
+                            zones.isEmpty
+                        ? null
+                        : summary == null
+                            ? prepareCheckout
+                            : placeOrder,
+                    child: loading
+                        ? const CircularProgressIndicator()
+                        : Text(localized(context,
+                            summary == null ? 'Review order' : 'Place order')),
+                  ),
                 ),
               ],
-            )
-          else
-            DropdownButtonFormField<String>(
-              initialValue: selectedAddressId,
-              decoration: InputDecoration(labelText: localized(context, 'Choose an address')),
-              items: addresses.map((address) => DropdownMenuItem(
-                value: address.id,
-                child: Text('${address.label} · ${address.city}, ${address.street}', overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (id) {
-                final address = _findAddress(addresses, id);
-                setState(() { selectedAddressId = id; summary = null; });
-                if (address != null) _loadZones(address.city);
-              },
             ),
-          const SizedBox(height: 20),
-          Text(localized(context, 'Delivery zone'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: zones.any((zone) => zone.id == selectedZoneId) ? selectedZoneId : null,
-            decoration: InputDecoration(labelText: localized(context, 'Choose a delivery zone')),
-            items: zones.map((zone) => DropdownMenuItem(
-              value: zone.id,
-              child: Text('${zone.name} · ${localized(context, '{minutes} minutes', {'minutes': zone.estimatedMinutes})}'),
-            )).toList(),
-            onChanged: (id) => setState(() { selectedZoneId = id; summary = null; }),
-          ),
-          const SizedBox(height: 20),
-          Text(localized(context, 'Delivery option'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          SegmentedButton<String>(
-            segments: [
-              ButtonSegment(value: 'standard', label: Text(localized(context, 'Standard'))),
-              ButtonSegment(value: 'express', label: Text(localized(context, 'Express'))),
-            ],
-            selected: {deliveryOption},
-            onSelectionChanged: (value) => setState(() { deliveryOption = value.first; summary = null; }),
-          ),
-          const SizedBox(height: 20),
-          Text(localized(context, 'Payment method'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          SegmentedButton<String>(
-            segments: [
-              ButtonSegment(value: 'card', label: Text(localized(context, 'Card'))),
-              ButtonSegment(value: 'cash', label: Text(localized(context, 'Cash'))),
-            ],
-            selected: {paymentMethod},
-            onSelectionChanged: (value) => setState(() { paymentMethod = value.first; summary = null; }),
-          ),
-          const SizedBox(height: 16),
-          TextFormField(
-            initialValue: promotionCode,
-            textCapitalization: TextCapitalization.characters,
-            decoration: InputDecoration(
-              labelText: localized(context, 'Promotion code (optional)'),
-            ),
-            onChanged: (value) {
-              promotionCode = value;
-              if (summary != null) setState(() => summary = null);
-            },
-          ),
-          if (error != null) ...[
-            const SizedBox(height: 16),
-            Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            TextButton.icon(onPressed: _loadCheckoutData, icon: const Icon(Icons.refresh), label: Text(localized(context, 'Retry'))),
-          ],
-          if (summary != null) ...[
-            if (paymentMethod == 'card') ...[
-              const SizedBox(height: 12),
-              Text(
-                localized(context, 'Card payment processing is not available yet. The order will remain payment pending.'),
-              ),
-            ],
-            const SizedBox(height: 20),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Subtotal')), Text('${summary!.currency} ${summary!.subtotal.toStringAsFixed(2)}')]),
-                    if (summary!.discount > 0) ...[
-                      const SizedBox(height: 8),
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('${localized(context, 'Promotion')}${summary!.promotionCode == null ? '' : ' (${summary!.promotionCode})'}'), Text('-${summary!.currency} ${summary!.discount.toStringAsFixed(2)}')]),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Delivery')), Text('${summary!.currency} ${summary!.deliveryFee.toStringAsFixed(2)}')]),
-                    const SizedBox(height: 8),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Service fee')), Text('${summary!.currency} ${summary!.serviceFee.toStringAsFixed(2)}')]),
-                    const Divider(),
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(localized(context, 'Total'), style: const TextStyle(fontWeight: FontWeight.bold)), Text('${summary!.currency} ${summary!.total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold))]),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: loading || addresses.isEmpty || zones.isEmpty
-                  ? null
-                  : summary == null ? prepareCheckout : placeOrder,
-              child: loading
-                  ? const CircularProgressIndicator()
-                  : Text(localized(context, summary == null ? 'Review order' : 'Place order')),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1451,12 +2047,25 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _loadOrders() async {
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final result = await ApiClient.fetchOrders();
-      if (mounted) setState(() { orders = result; loading = false; });
+      if (mounted) {
+        setState(() {
+          orders = result;
+          loading = false;
+        });
+      }
     } catch (exception) {
-      if (mounted) setState(() { loading = false; error = exception.toString(); });
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = exception.toString();
+        });
+      }
     }
   }
 
@@ -1497,13 +2106,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
       await _loadOrders();
       if (!mounted) return;
       final message = intent.checkoutUrl == null
-          ? localized(context, 'Payment intent created by {provider}; no payment was taken and no provider checkout is configured.', {'provider': intent.provider})
-          : localized(context, 'Payment intent created. Continue through the provider checkout.');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+          ? localized(
+              context,
+              'Payment intent created by {provider}; no payment was taken and no provider checkout is configured.',
+              {
+                  'provider': intent.provider
+                })
+          : localized(context,
+              'Payment intent created. Continue through the provider checkout.');
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localized(context, 'Payment could not be started: {error}', {'error': exception}))),
+          SnackBar(
+              content: Text(localized(
+                  context,
+                  'Payment could not be started: {error}',
+                  {'error': exception}))),
         );
       }
     } finally {
@@ -1524,14 +2144,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(localized(context, 'Delivery {status}', {'status': localizedStatus(context, delivery.status)}),
+                Text(
+                    localized(context, 'Delivery {status}',
+                        {'status': localizedStatus(context, delivery.status)}),
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
-                Text(localized(context, 'Tracking code: {code}', {'code': delivery.trackingCode})),
-                Text(localized(context, 'Estimated time: {minutes} minutes', {'minutes': delivery.estimatedMinutes})),
+                Text(localized(context, 'Tracking code: {code}',
+                    {'code': delivery.trackingCode})),
+                Text(localized(context, 'Estimated time: {minutes} minutes',
+                    {'minutes': delivery.estimatedMinutes})),
                 const SizedBox(height: 12),
                 if (!delivery.trackingAvailable)
-                  Text(localized(context, 'Live driver tracking is not available yet.')),
+                  Text(localized(
+                      context, 'Live driver tracking is not available yet.')),
                 ...delivery.events.map((event) => ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.local_shipping_outlined),
@@ -1545,7 +2170,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localized(context, 'Delivery information is unavailable: {error}', {'error': exception}))),
+          SnackBar(
+              content: Text(localized(
+                  context,
+                  'Delivery information is unavailable: {error}',
+                  {'error': exception}))),
         );
       }
     }
@@ -1567,25 +2196,32 @@ class _OrdersScreenState extends State<OrdersScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: productId,
-                  items: order.items.map((item) => DropdownMenuItem(
-                    value: item.productId,
-                    child: Text(item.name, overflow: TextOverflow.ellipsis),
-                  )).toList(),
-                  onChanged: (value) => setDialogState(() => productId = value ?? productId),
+                  items: order.items
+                      .map((item) => DropdownMenuItem(
+                            value: item.productId,
+                            child: Text(item.name,
+                                overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => productId = value ?? productId),
                 ),
-                Text(localized(context, 'Rating: {rating} / 5', {'rating': rating})),
+                Text(localized(
+                    context, 'Rating: {rating} / 5', {'rating': rating})),
                 Slider(
                   value: rating.toDouble(),
                   min: 1,
                   max: 5,
                   divisions: 4,
                   label: '$rating',
-                  onChanged: (value) => setDialogState(() => rating = value.round()),
+                  onChanged: (value) =>
+                      setDialogState(() => rating = value.round()),
                 ),
                 TextField(
                   controller: commentController,
                   maxLength: 1000,
-                  decoration: InputDecoration(labelText: localized(context, 'Comment (optional)')),
+                  decoration: InputDecoration(
+                      labelText: localized(context, 'Comment (optional)')),
                 ),
               ],
             ),
@@ -1615,13 +2251,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localized(context, 'Review submitted for moderation.'))),
+          SnackBar(
+              content:
+                  Text(localized(context, 'Review submitted for moderation.'))),
         );
       }
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localized(context, 'Review could not be submitted: {error}', {'error': exception}))),
+          SnackBar(
+              content: Text(localized(
+                  context,
+                  'Review could not be submitted: {error}',
+                  {'error': exception}))),
         );
       }
     } finally {
@@ -1634,7 +2276,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Orders')),
-        actions: const [LanguageSwitch()],
+        actions: const [LanguageSwitch(compact: true)],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -1645,12 +2287,16 @@ class _OrdersScreenState extends State<OrdersScreen> {
                     children: [
                       Text(localizedError(context, error!)),
                       const SizedBox(height: 12),
-                      FilledButton(onPressed: _loadOrders, child: Text(localized(context, 'Retry'))),
+                      FilledButton(
+                          onPressed: _loadOrders,
+                          child: Text(localized(context, 'Retry'))),
                     ],
                   ),
                 )
               : orders.isEmpty
-                  ? Center(child: Text(localized(context, 'You have no orders yet.')))
+                  ? Center(
+                      child:
+                          Text(localized(context, 'You have no orders yet.')))
                   : RefreshIndicator(
                       onRefresh: _loadOrders,
                       child: ListView.separated(
@@ -1668,16 +2314,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(localized(context, 'Order {id}', {'id': order.id.substring(0, 8)})),
-                                      Chip(label: Text(localizedStatus(context, order.status))),
+                                      Text(localized(context, 'Order {id}',
+                                          {'id': order.id.substring(0, 8)})),
+                                      Chip(
+                                          label: Text(localizedStatus(
+                                              context, order.status))),
                                     ],
                                   ),
-                                  Text('${order.address.label} · ${order.address.city}'),
+                                  Text(
+                                      '${order.address.label} · ${order.address.city}'),
                                   const SizedBox(height: 8),
                                   ...order.items.map((item) => Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 2),
                                         child: Text(
                                           '${item.quantity} × ${Localizations.localeOf(context).languageCode == 'ar' && item.nameAr?.isNotEmpty == true ? item.nameAr : item.name}',
                                         ),
@@ -1685,12 +2337,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                   const Divider(),
                                   Text(
                                     '${order.currency} ${order.total.toStringAsFixed(2)}',
-                                    style: Theme.of(context).textTheme.titleMedium,
+                                    style:
+                                        Theme.of(context).textTheme.titleMedium,
                                   ),
                                   if (order.status == 'payment_pending')
                                     Padding(
                                       padding: EdgeInsets.only(top: 8),
-                                      child: Text(localized(context, 'Payment has not been processed.')),
+                                      child: Text(localized(context,
+                                          'Payment has not been processed.')),
                                     ),
                                   const SizedBox(height: 8),
                                   Wrap(
@@ -1699,37 +2353,50 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       OutlinedButton.icon(
                                         onPressed: () => _reorder(order),
                                         icon: const Icon(Icons.replay),
-                                        label: Text(localized(context, 'Reorder')),
+                                        label:
+                                            Text(localized(context, 'Reorder')),
                                       ),
                                       OutlinedButton.icon(
                                         onPressed: () => _showDelivery(order),
-                                        icon: const Icon(Icons.local_shipping_outlined),
-                                        label: Text(localized(context, 'Delivery')),
+                                        icon: const Icon(
+                                            Icons.local_shipping_outlined),
+                                        label: Text(
+                                            localized(context, 'Delivery')),
                                       ),
                                       if (order.deliveryStatus == 'delivered')
                                         OutlinedButton.icon(
                                           onPressed: () => _reviewOrder(order),
                                           icon: const Icon(Icons.star_outline),
-                                          label: Text(localized(context, 'Review product')),
+                                          label: Text(localized(
+                                              context, 'Review product')),
                                         ),
-                                      if (canCancel && order.paymentStatus != 'pending')
+                                      if (canCancel &&
+                                          order.paymentStatus != 'pending')
                                         TextButton.icon(
                                           onPressed: () => _cancelOrder(order),
-                                          icon: const Icon(Icons.cancel_outlined),
-                                          label: Text(localized(context, 'Cancel')),
+                                          icon:
+                                              const Icon(Icons.cancel_outlined),
+                                          label: Text(
+                                              localized(context, 'Cancel')),
                                         ),
                                       if (order.status == 'payment_pending' &&
                                           order.paymentMethod == 'card') ...[
                                         if (order.paymentStatus == 'pending')
-                                          Chip(label: Text(localized(context, 'Payment in progress')))
+                                          Chip(
+                                              label: Text(localized(context,
+                                                  'Payment in progress')))
                                         else
                                           FilledButton.tonal(
-                                            onPressed: _startingPayments.contains(order.id)
+                                            onPressed: _startingPayments
+                                                    .contains(order.id)
                                                 ? null
                                                 : () => _startPayment(order),
-                                            child: Text(_startingPayments.contains(order.id)
-                                                ? localized(context, 'Starting...')
-                                                    : localized(context, 'Start payment')),
+                                            child: Text(_startingPayments
+                                                    .contains(order.id)
+                                                ? localized(
+                                                    context, 'Starting...')
+                                                : localized(
+                                                    context, 'Start payment')),
                                           ),
                                       ],
                                     ],
@@ -1764,12 +2431,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _load() async {
-    setState(() { loading = true; error = null; });
+    setState(() {
+      loading = true;
+      error = null;
+    });
     try {
       final result = await ApiClient.fetchNotifications();
-      if (mounted) setState(() { items = result; loading = false; });
+      if (mounted) {
+        setState(() {
+          items = result;
+          loading = false;
+        });
+      }
     } catch (exception) {
-      if (mounted) setState(() { error = exception.toString(); loading = false; });
+      if (mounted) {
+        setState(() {
+          error = exception.toString();
+          loading = false;
+        });
+      }
     }
   }
 
@@ -1780,7 +2460,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } catch (exception) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localized(context, 'Could not update notification: {error}', {'error': exception}))),
+          SnackBar(
+              content: Text(localized(
+                  context,
+                  'Could not update notification: {error}',
+                  {'error': exception}))),
         );
       }
     }
@@ -1791,7 +2475,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Notifications')),
-        actions: const [LanguageSwitch()],
+        actions: const [LanguageSwitch(compact: true)],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
@@ -1802,12 +2486,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     children: [
                       Text(localizedError(context, error!)),
                       const SizedBox(height: 12),
-                      FilledButton(onPressed: _load, child: Text(localized(context, 'Retry'))),
+                      FilledButton(
+                          onPressed: _load,
+                          child: Text(localized(context, 'Retry'))),
                     ],
                   ),
                 )
               : items.isEmpty
-                  ? Center(child: Text(localized(context, 'No notifications yet.')))
+                  ? Center(
+                      child: Text(localized(context, 'No notifications yet.')))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: ListView.separated(
@@ -1832,48 +2519,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         },
                       ),
                     ),
-    );
-  }
-}
-
-class _FeatureChip extends StatelessWidget {
-  final String label;
-
-  const _FeatureChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(
-      label: Text(label),
-      backgroundColor: const Color(0xFFEAFBF4),
-      side: const BorderSide(color: Color(0xFF9FE6C2)),
-    );
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: const Color(0xFF0E9F6E)),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: onPressed,
-      ),
     );
   }
 }

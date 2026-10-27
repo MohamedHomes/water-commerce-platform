@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import {
     AdminLanguage,
     AdminMessage,
@@ -99,6 +99,16 @@ interface LoginResponse {
     customer: { role: string };
 }
 
+class ApiRequestError extends Error {
+    constructor(
+        message: string,
+        readonly status: number,
+        readonly retryAfterSeconds?: number,
+    ) {
+        super(message);
+    }
+}
+
 async function apiRequest<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, {
         ...options,
@@ -110,7 +120,12 @@ async function apiRequest<T>(path: string, token: string, options: RequestInit =
     });
     if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { message?: string };
-        throw new Error(payload.message ?? `Request failed (${response.status})`);
+        const retryAfter = Number(response.headers.get('Retry-After'));
+        throw new ApiRequestError(
+            payload.message ?? `Request failed (${response.status})`,
+            response.status,
+            Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+        );
     }
     return response.json() as Promise<T>;
 }
@@ -123,9 +138,17 @@ function App() {
         [language],
     );
     const errorMessage = useCallback(
-        (requestError: unknown, fallback: AdminMessage) =>
-            requestError instanceof Error ? translateError(language, requestError.message) : t(fallback),
-        [language, t],
+        (requestError: unknown, fallback: AdminMessage) => {
+            if (
+                requestError instanceof ApiRequestError
+                && requestError.status === 429
+                && requestError.retryAfterSeconds !== undefined
+            ) {
+                return format('rateLimitedFor', { seconds: requestError.retryAfterSeconds });
+            }
+            return requestError instanceof Error ? translateError(language, requestError.message) : t(fallback);
+        },
+        [format, language, t],
     );
     const [token, setToken] = useState('');
     const [email, setEmail] = useState('');
@@ -167,6 +190,7 @@ function App() {
     const [discountValue, setDiscountValue] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const loginInFlight = useRef(false);
 
     useEffect(() => {
         syncAdminLanguage(language, (key, value) => localStorage.setItem(key, value), document.documentElement);
@@ -208,6 +232,8 @@ function App() {
 
     async function login(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        if (loginInFlight.current) return;
+        loginInFlight.current = true;
         setLoading(true);
         setError('');
         try {
@@ -217,13 +243,21 @@ function App() {
                 body: JSON.stringify({ email, password }),
             });
             const payload = await response.json() as LoginResponse & { message?: string };
-            if (!response.ok) throw new Error(payload.message ?? 'Sign in failed');
+            if (!response.ok) {
+                const retryAfter = Number(response.headers.get('Retry-After'));
+                throw new ApiRequestError(
+                    payload.message ?? 'Sign in failed',
+                    response.status,
+                    Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+                );
+            }
             if (payload.customer.role !== 'admin') throw new Error(t('notAuthorized'));
             setToken(payload.accessToken);
             setPassword('');
         } catch (requestError) {
             setError(errorMessage(requestError, 'loginFailed'));
         } finally {
+            loginInFlight.current = false;
             setLoading(false);
         }
     }
@@ -529,7 +563,7 @@ function App() {
                                         <td>{item.quantity}</td>
                                         <td>{translateStatus(language, item.availability)}</td>
                                         <td>
-                                            <button className="secondary" aria-label={format('removeOne', { product: item.name })} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
+                                            <button className="secondary" aria-label={format('removeOne', { product: item.name })} disabled={loading || item.quantity <= 0} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
                                             <button aria-label={format('addOne', { product: item.name })} onClick={() => void adjustInventory(item, 1)}>+</button>
                                         </td>
                                     </tr>
@@ -554,9 +588,19 @@ function App() {
                                             <td>{delivery.order_id.slice(0, 8)}</td>
                                             <td>{translateStatus(language, delivery.status)}</td>
                                             <td>{format('minutes', { count: delivery.estimated_minutes })}</td>
-                                            <td>{nextStatus
-                                                ? <button onClick={() => void updateDelivery(delivery, nextStatus)}>{format('markStatus', { status: translateStatus(language, nextStatus) })}</button>
-                                                : t('noAction')}</td>
+                                            <td>
+                                                {nextStatus && (
+                                                    <button disabled={loading} onClick={() => void updateDelivery(delivery, nextStatus)}>
+                                                        {format('markStatus', { status: translateStatus(language, nextStatus) })}
+                                                    </button>
+                                                )}
+                                                {(delivery.status === 'assigned' || delivery.status === 'picked_up') && (
+                                                    <button className="secondary" disabled={loading} onClick={() => void updateDelivery(delivery, 'failed')}>
+                                                        {t('markDeliveryFailed')}
+                                                    </button>
+                                                )}
+                                                {!nextStatus && delivery.status !== 'assigned' && delivery.status !== 'picked_up' && t('noAction')}
+                                            </td>
                                         </tr>
                                     );
                                 })}</tbody>
