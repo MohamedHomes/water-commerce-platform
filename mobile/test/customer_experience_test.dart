@@ -1,5 +1,7 @@
 import 'package:aquaflow_mobile/cart_screen.dart';
 import 'package:aquaflow_mobile/customer_ui.dart';
+import 'package:aquaflow_mobile/customer_navigation.dart';
+import 'package:aquaflow_mobile/customer_profile.dart';
 import 'package:aquaflow_mobile/catalog_screen.dart';
 import 'package:aquaflow_mobile/main.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +10,80 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('password visibility can be toggled on the Arabic login form',
+      (tester) async {
+    await tester.pumpWidget(_loginApp());
+
+    final password = find.byType(TextFormField).last;
+    final editablePassword = find.descendant(
+      of: password,
+      matching: find.byType(EditableText),
+    );
+    expect(tester.widget<EditableText>(editablePassword).obscureText, isTrue);
+    await tester.tap(find.byTooltip('إظهار كلمة المرور'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<EditableText>(editablePassword).obscureText, isFalse);
+    await tester.tap(find.byTooltip('إخفاء كلمة المرور'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<EditableText>(editablePassword).obscureText, isTrue);
+  });
+
+  testWidgets('forgot-password flow validates email before making a request',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: const [
+          GlobalWidgetsLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: const ForgotPasswordScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('إرسال رمز الاستعادة'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('أدخل بريداً إلكترونياً صحيحاً'), findsOneWidget);
+  });
+
+  testWidgets('customer navigation has five Arabic destinations and cart count',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var selected = -1;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('en'), Locale('ar')],
+        localizationsDelegates: const [
+          GlobalWidgetsLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: Scaffold(
+          bottomNavigationBar: CustomerBottomNavigationBar(
+            selectedIndex: 0,
+            cartItemCount: 3,
+            onDestinationSelected: (index) => selected = index,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(NavigationDestination), findsNWidgets(5));
+    for (final label in ['الرئيسية', 'الفئات', 'السلة', 'المفضلة', 'حسابي']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(find.text('3'), findsOneWidget);
+    await tester.tap(find.text('المفضلة'));
+    expect(selected, 3);
+  });
+
   testWidgets('customer registration enforces backend password rules locally',
       (tester) async {
     await tester.pumpWidget(

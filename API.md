@@ -9,12 +9,19 @@
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/refresh`
+- `PATCH /api/v1/auth/profile`
+- `PATCH /api/v1/auth/password`
+- `POST /api/v1/auth/password-reset/request`
+- `POST /api/v1/auth/password-reset/confirm`
 - `GET /api/v1/products`
 - `GET /api/v1/catalog/products/:productId/reviews`
 - `POST /api/v1/catalog/products/:productId/reviews`
 - `GET /api/v1/catalog/categories`
 - `GET /api/v1/catalog/brands`
 - `GET /api/v1/catalog/products`
+- `GET /api/v1/catalog/favorites`
+- `PUT /api/v1/catalog/favorites/:productId`
+- `DELETE /api/v1/catalog/favorites/:productId`
 - `GET /api/v1/categories`
 - `GET /api/v1/brands`
 - `GET /api/v1/cart`
@@ -84,6 +91,11 @@
 - `GET /api/v1/orders` supports `page` and `limit` query parameters (1-based,
   with a maximum limit of 100). Order and checkout resources are customer
   isolated.
+- Order `status` represents order/payment lifecycle; `deliveryStatus` is read
+  from the persisted delivery record and represents fulfillment progress.
+  Delivery status is changed only through the Admin-authorized delivery
+  workflow. Reviews require persisted `delivered` state and never update order
+  or delivery state themselves.
 - Cancellation is available while an order is `placed` or `payment_pending`.
   Reorder adds the saved product quantities to the active cart using current
   product prices and stock validation.
@@ -115,6 +127,10 @@
 
 - `GET /api/v1/deliveries/orders/:orderId` returns a customer-owned delivery
   record and its status event timeline for cash orders and paid card orders.
+- Delivery status transitions are Admin-only and sequenced as
+  `pending_dispatch → assigned → picked_up → delivered` (or `failed` from
+  `assigned`/`picked_up`). Transition, timestamp, event, and audit record are
+  persisted in one transaction. Rating requires persisted `delivered` state.
 - Delivery records begin in `pending_dispatch`; cancellation before dispatch
   records a cancelled event. The platform has no driver dispatch provider,
   assignment operations, or live location feed configured. `trackingAvailable`
@@ -128,6 +144,27 @@
 - `PATCH /api/v1/notifications/:id/read` marks a notification read
   idempotently. Customers cannot read or modify another customer's
   notifications.
+- The backend currently has no notification-preference endpoint, push-token
+  management, or email/push notification delivery.
+
+### Customer account and favorites
+
+- `PATCH /api/v1/auth/profile` updates the authenticated customer's personal
+  name and phone only. `PATCH /api/v1/auth/password` requires the current
+  password and existing password policy; on success it returns replacement
+  access and refresh tokens. Clients must store both tokens because the old
+  session is revoked.
+- `POST /api/v1/auth/password-reset/request` requires configured
+  `SMTP_HOST`, `SMTP_PORT`, and `SMTP_FROM`. Its response does not disclose
+  whether an email is registered. Recovery codes are single-use, expire after
+  15 minutes, and are stored only as SHA-256 digests.
+- `POST /api/v1/auth/password-reset/confirm` accepts a recovery code and a
+  policy-compliant new password. Missing SMTP configuration returns service
+  unavailable instead of simulating email delivery. A successful reset revokes
+  all previously issued access and refresh tokens for that customer.
+- Favorites are stored per authenticated customer. `PUT` is idempotent and
+  only active catalog products can be added; list and delete operations are
+  customer-isolated.
 - Order placement/cancellation and verified payment success/failure create
   persistent in-app updates. Email, SMS, and push delivery are not configured.
 

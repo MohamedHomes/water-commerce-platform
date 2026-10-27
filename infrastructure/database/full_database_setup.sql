@@ -756,6 +756,37 @@ CREATE INDEX IF NOT EXISTS idx_application_rate_limits_updated_at
     ON application_rate_limits(updated_at);
 -- END 018_add_persistent_rate_limits.sql
 
+-- BEGIN 019_create_customer_favorites.sql
+CREATE TABLE IF NOT EXISTS customer_favorites (
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    product_id VARCHAR(128) NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (customer_id, product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_favorites_customer_created
+    ON customer_favorites(customer_id, created_at DESC);
+-- END 019_create_customer_favorites.sql
+
+-- BEGIN 020_create_password_reset_tokens.sql
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash CHAR(64) PRIMARY KEY,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_customer
+    ON password_reset_tokens(customer_id, created_at DESC);
+-- END 020_create_password_reset_tokens.sql
+
+-- BEGIN 021_add_customer_auth_version.sql
+ALTER TABLE customers
+    ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0
+        CHECK (auth_version >= 0);
+-- END 021_add_customer_auth_version.sql
+
 -- Match the ledger schema maintained by backend/src/database/migration-runner.ts.
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(32) NOT NULL PRIMARY KEY,
@@ -781,5 +812,8 @@ INSERT INTO schema_migrations (version, filename, checksum) VALUES
     ('015', '015_add_admin_inventory_adjustments.sql', '8df2943022388867610e319b80f919556524d93da8e77683f1b1bd2b71cd66fb'),
     ('016', '016_create_product_reviews.sql', 'b31bd3ff83fb20ba2e6de4f184ab71e14e9fc694f6739df35d17f653306066b7'),
     ('017', '017_add_catalog_localizations.sql', 'd727d7bd17954069aacafcb6c92e5ff80d2c23a91543c7c7406851ff7e99356f'),
-    ('018', '018_add_persistent_rate_limits.sql', '44e83b935c43d450bf64866e99961a308e6e97954392cf636b363717b24ff4fc');
+    ('018', '018_add_persistent_rate_limits.sql', '44e83b935c43d450bf64866e99961a308e6e97954392cf636b363717b24ff4fc'),
+    ('019', '019_create_customer_favorites.sql', 'a196495aaf90988ecd436ef108560299f73a67d9baa921d134b7c0c2b2ec4b30'),
+    ('020', '020_create_password_reset_tokens.sql', '84bf727c98fffedae5d3a995788abfbfb46970c96655fd7a6ae184a5f41d3544'),
+    ('021', '021_add_customer_auth_version.sql', '4ab19c48429d229c1c777f304f55a62bc4eb28508837f435f43148b042ebfd5c');
 COMMIT;

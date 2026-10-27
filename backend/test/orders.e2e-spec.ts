@@ -78,10 +78,9 @@ describe('Orders', () => {
 
     it('places from a validated checkout once and keeps the order private to its customer', async () => {
         const customer = await registerCustomer('orders-card@example.com');
-        const beforeReservation = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const beforeReservation = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         const prepared = await prepareCheckout(customer.token, 'card');
 
         const created = await request(app.getHttpServer())
@@ -96,12 +95,14 @@ describe('Orders', () => {
             status: 'payment_pending',
             paymentMethod: 'card',
             items: [expect.objectContaining({ productId: 'prod-1', quantity: 2 })],
-            summary: expect.objectContaining({ total: expect.any(Number), currency: 'SAR' }),
+            summary: expect.objectContaining({
+                total: expect.any(Number),
+                currency: 'SAR',
+            }),
         });
-        const inventory = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const inventory = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         expect(inventory.rows[0].quantity).toBe(beforeReservation.rows[0].quantity - 2);
 
         const repeated = await request(app.getHttpServer())
@@ -156,10 +157,9 @@ describe('Orders', () => {
 
     it('cancels an unpaid cash order and reorders its item snapshot at current prices', async () => {
         const customer = await registerCustomer('orders-cash@example.com');
-        const before = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const before = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         const prepared = await prepareCheckout(customer.token, 'cash');
         const created = await request(app.getHttpServer())
             .post('/api/v1/orders')
@@ -168,10 +168,9 @@ describe('Orders', () => {
             .expect(201);
         expect(created.body.status).toBe('placed');
         expect(created.body.items[0].unitPrice).toBe(4.5);
-        const afterReservation = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const afterReservation = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         expect(afterReservation.rows[0].quantity).toBe(before.rows[0].quantity - 2);
 
         const cancelled = await request(app.getHttpServer())
@@ -185,22 +184,22 @@ describe('Orders', () => {
             .set('Authorization', `Bearer ${customer.token}`)
             .expect(200);
         expect(cancelledDelivery.body.status).toBe('cancelled');
-        const afterRelease = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const afterRelease = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         expect(afterRelease.rows[0].quantity).toBe(before.rows[0].quantity);
 
-        await app.get(DatabaseService).query(
-            'UPDATE products SET price = $1 WHERE id = $2',
-            [6, 'prod-1'],
-        );
+        await app.get(DatabaseService).query('UPDATE products SET price = $1 WHERE id = $2', [6, 'prod-1']);
         const reordered = await request(app.getHttpServer())
             .post(`/api/v1/orders/${created.body.id}/reorder`)
             .set('Authorization', `Bearer ${customer.token}`)
             .expect(200);
         expect(reordered.body.cart.items).toEqual([
-            expect.objectContaining({ productId: 'prod-1', quantity: 2, unitPrice: 6 }),
+            expect.objectContaining({
+                productId: 'prod-1',
+                quantity: 2,
+                unitPrice: 6,
+            }),
         ]);
         expect(reordered.body.cart.summary.total).toBe(12);
         const persistedOrder = await request(app.getHttpServer())
@@ -234,14 +233,12 @@ describe('Orders', () => {
     });
 
     it('serializes competing orders so inventory cannot be oversold', async () => {
-        const originalInventory = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
-        await app.get(DatabaseService).query(
-            "UPDATE products SET quantity = 1, availability = 'in_stock' WHERE id = $1",
-            ['prod-1'],
-        );
+        const originalInventory = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
+        await app
+            .get(DatabaseService)
+            .query("UPDATE products SET quantity = 1, availability = 'in_stock' WHERE id = $1", ['prod-1']);
         const firstCustomer = await registerCustomer('inventory-first@example.com');
         const secondCustomer = await registerCustomer('inventory-second@example.com');
         const firstCheckout = await prepareCheckout(firstCustomer.token, 'cash', 1);
@@ -263,15 +260,16 @@ describe('Orders', () => {
         const successfulToken = successfulIndex === 0 ? firstCustomer.token : secondCustomer.token;
         expect(successfulOrder).toBeDefined();
 
-        const inventory = await app.get(DatabaseService).query<{ quantity: number }>(
-            'SELECT quantity FROM products WHERE id = $1',
-            ['prod-1'],
-        );
+        const inventory = await app
+            .get(DatabaseService)
+            .query<{ quantity: number }>('SELECT quantity FROM products WHERE id = $1', ['prod-1']);
         expect(inventory.rows[0].quantity).toBe(0);
-        const reservations = await app.get(DatabaseService).query<{ count: string }>(
-            "SELECT COUNT(*)::text AS count FROM inventory_reservations WHERE order_id = $1 AND status = 'reserved'",
-            [successfulOrder.id],
-        );
+        const reservations = await app
+            .get(DatabaseService)
+            .query<{ count: string }>(
+                "SELECT COUNT(*)::text AS count FROM inventory_reservations WHERE order_id = $1 AND status = 'reserved'",
+                [successfulOrder.id],
+            );
         expect(Number(reservations.rows[0].count)).toBe(1);
         const delivery = await request(app.getHttpServer())
             .get(`/api/v1/deliveries/orders/${successfulOrder.id}`)
@@ -293,10 +291,13 @@ describe('Orders', () => {
             .set('Authorization', `Bearer ${successfulToken}`)
             .expect(200);
 
-        await app.get(DatabaseService).query(
-            'UPDATE products SET quantity = $1, availability = $2 WHERE id = $3',
-            [originalInventory.rows[0].quantity, 'in_stock', 'prod-1'],
-        );
+        await app
+            .get(DatabaseService)
+            .query('UPDATE products SET quantity = $1, availability = $2 WHERE id = $3', [
+                originalInventory.rows[0].quantity,
+                'in_stock',
+                'prod-1',
+            ]);
     });
 
     it('applies a server-calculated promotion once and enforces redemption limits', async () => {
@@ -379,6 +380,11 @@ describe('Orders', () => {
             .get(`/api/v1/deliveries/orders/${order.body.id}`)
             .set('Authorization', `Bearer ${customer.token}`)
             .expect(200);
+        await request(app.getHttpServer())
+            .post('/api/v1/catalog/products/prod-1/reviews')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({ orderId: order.body.id, rating: 5, comment: 'Before delivery' })
+            .expect(400);
 
         const admin = await registerCustomer('delivery-admin@example.com');
         const database = app.get(DatabaseService);
@@ -389,6 +395,11 @@ describe('Orders', () => {
             .expect(201);
         const adminToken = adminLogin.body.accessToken as string;
 
+        await request(app.getHttpServer())
+            .patch(`/api/v1/admin/deliveries/${delivery.body.id}/status`)
+            .set('Authorization', `Bearer ${customer.token}`)
+            .send({ status: 'assigned', note: 'Customer cannot assign delivery' })
+            .expect(403);
         await request(app.getHttpServer())
             .patch(`/api/v1/admin/deliveries/${delivery.body.id}/status`)
             .set('Authorization', `Bearer ${adminToken}`)
@@ -408,8 +419,31 @@ describe('Orders', () => {
             .expect(200);
         expect(updated.body.status).toBe('delivered');
         expect(updated.body.deliveredAt).toEqual(expect.any(String));
-        expect(updated.body.events.map((event: { status: string }) => event.status))
-            .toEqual(['pending_dispatch', 'assigned', 'picked_up', 'delivered']);
+        expect(updated.body.events.map((event: { status: string }) => event.status)).toEqual([
+            'pending_dispatch',
+            'assigned',
+            'picked_up',
+            'delivered',
+        ]);
+        const orderDetails = await request(app.getHttpServer())
+            .get(`/api/v1/orders/${order.body.id}`)
+            .set('Authorization', `Bearer ${customer.token}`)
+            .expect(200);
+        expect(orderDetails.body).toMatchObject({
+            status: 'placed',
+            deliveryStatus: 'delivered',
+        });
+        const customerOrders = await request(app.getHttpServer())
+            .get('/api/v1/orders')
+            .set('Authorization', `Bearer ${customer.token}`)
+            .expect(200);
+        expect(customerOrders.body.items).toContainEqual(
+            expect.objectContaining({
+                id: order.body.id,
+                status: 'placed',
+                deliveryStatus: 'delivered',
+            }),
+        );
 
         const anotherCustomer = await registerCustomer('review-other-customer@example.com');
         await request(app.getHttpServer())
@@ -433,10 +467,19 @@ describe('Orders', () => {
             })
             .expect(201);
         expect(submitted.body.status).toBe('pending');
-        const hidden = await request(app.getHttpServer())
-            .get('/api/v1/catalog/products/prod-1/reviews')
+        const orderAfterReview = await request(app.getHttpServer())
+            .get(`/api/v1/orders/${order.body.id}`)
+            .set('Authorization', `Bearer ${customer.token}`)
             .expect(200);
-        expect(hidden.body).toMatchObject({ items: [], summary: { count: 0, averageRating: null } });
+        expect(orderAfterReview.body).toMatchObject({
+            status: 'placed',
+            deliveryStatus: 'delivered',
+        });
+        const hidden = await request(app.getHttpServer()).get('/api/v1/catalog/products/prod-1/reviews').expect(200);
+        expect(hidden.body).toMatchObject({
+            items: [],
+            summary: { count: 0, averageRating: null },
+        });
 
         const pendingReviews = await request(app.getHttpServer())
             .get('/api/v1/admin/reviews')
@@ -471,7 +514,11 @@ describe('Orders', () => {
         const rejectedReview = await request(app.getHttpServer())
             .post('/api/v1/catalog/products/prod-1/reviews')
             .set('Authorization', `Bearer ${customer.token}`)
-            .send({ orderId: secondOrder.body.id, rating: 2, comment: 'Rejected review' })
+            .send({
+                orderId: secondOrder.body.id,
+                rating: 2,
+                comment: 'Rejected review',
+            })
             .expect(201);
         await request(app.getHttpServer())
             .patch(`/api/v1/admin/reviews/${rejectedReview.body.id}/status`)
@@ -484,12 +531,13 @@ describe('Orders', () => {
         expect(hiddenRejected.body.summary).toEqual({ count: 1, averageRating: 5 });
         expect(hiddenRejected.body.items).toHaveLength(1);
 
-        const published = await request(app.getHttpServer())
-            .get('/api/v1/catalog/products/prod-1/reviews')
-            .expect(200);
+        const published = await request(app.getHttpServer()).get('/api/v1/catalog/products/prod-1/reviews').expect(200);
         expect(published.body.summary).toEqual({ count: 1, averageRating: 5 });
         expect(published.body.items).toEqual([
-            expect.objectContaining({ rating: 5, comment: 'Arrived in good condition' }),
+            expect.objectContaining({
+                rating: 5,
+                comment: 'Arrived in good condition',
+            }),
         ]);
         await request(app.getHttpServer())
             .post('/api/v1/catalog/products/prod-1/reviews')

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'api_config.dart';
 import 'cart_screen.dart';
 import 'customer_ui.dart';
+import 'favorites_screen.dart';
 import 'localization.dart';
 
 class CatalogProduct {
@@ -425,6 +426,22 @@ class _CatalogProductCardState extends ConsumerState<CatalogProductCard> {
                     ),
                   ),
                 ),
+              PositionedDirectional(
+                top: 8,
+                end: 8,
+                child: FavoriteToggleButton(
+                  productId: product.id,
+                  onError: (error) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(localizedError(context, error)),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ),
             ],
           ),
           Padding(
@@ -596,7 +613,19 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Product details')),
-        actions: const [LanguageSwitch(compact: true)],
+        actions: [
+          FavoriteToggleButton(
+            productId: widget.productId,
+            onError: (error) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(localizedError(context, error))),
+                );
+              }
+            },
+          ),
+          const LanguageSwitch(compact: true),
+        ],
       ),
       body: _loading && product == null
           ? const Center(child: CircularProgressIndicator())

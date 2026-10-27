@@ -56,10 +56,24 @@ docker compose -f infrastructure/docker-compose.yml up -d
 The backend includes authentication, catalog/search, carts, address
 management, checkout drafts, customer orders, payment lifecycle groundwork,
 inventory reservations, delivery status history, and an in-app notification
-inbox, plus database-backed admin dashboard and promotion management APIs.
+inbox, customer favorites, password recovery by SMTP email, plus database-backed
+admin dashboard and promotion management APIs. Notification preferences and
+push/email notification delivery are not currently implemented.
 Payment processing has no configured real provider, and delivery has no
 dispatch or live-tracking integration. PostgreSQL 16 deployment verification
 remains pending.
+
+### Customer password recovery
+
+The customer app's password recovery flow uses a 64-character, single-use
+recovery code delivered by email. Codes expire after 15 minutes; the database
+stores only a SHA-256 digest. The request response does not disclose whether an
+email is registered. Configure `SMTP_HOST`, `SMTP_PORT`, and `SMTP_FROM` to
+enable recovery; `SMTP_USER` and `SMTP_PASSWORD` are optional for servers that
+do not require authentication. Do not put real mail credentials in tracked
+files. Without the required SMTP settings, the API reports recovery as
+unavailable rather than pretending an email was sent. Database migrations run
+on backend startup and create the reset-token table.
 
 Configure `admin/.env` with `VITE_API_URL` (see `admin/.env.example`) to point
 the portal at the API. Administrator accounts must first be registered as

@@ -5,7 +5,7 @@ void main() {
   test('parses immutable order summary and address snapshots', () {
     final order = OrderRecord.fromJson({
       'id': 'order-id',
-      'status': 'payment_pending',
+      'status': 'placed',
       'deliveryStatus': 'delivered',
       'paymentMethod': 'card',
       'deliveryOption': 'standard',
@@ -32,12 +32,29 @@ void main() {
       'createdAt': '2026-10-23T14:00:00.000Z',
     });
 
-    expect(order.status, 'payment_pending');
+    expect(order.status, 'placed');
     expect(order.deliveryStatus, 'delivered');
     expect(order.address.city, 'Riyadh');
     expect(order.items.single.quantity, 2);
     expect(order.total, 15.5);
     expect(order.currency, 'SAR');
+    expect(customerOrderDisplayStatus(order), 'delivered');
+  });
+
+  test('uses the persisted delivery lifecycle status for customer display', () {
+    final order = OrderRecord.fromJson({
+      'id': 'order-id',
+      'status': 'placed',
+      'deliveryStatus': 'picked_up',
+      'paymentMethod': 'cash',
+      'deliveryOption': 'standard',
+      'address': <String, dynamic>{},
+      'items': [],
+      'summary': {'total': 4.5, 'currency': 'SAR'},
+      'createdAt': '2026-10-23T14:00:00.000Z',
+    });
+
+    expect(customerOrderDisplayStatus(order), 'picked_up');
   });
 
   test('parses payment intent without exposing card data', () {

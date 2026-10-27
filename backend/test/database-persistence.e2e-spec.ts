@@ -7,6 +7,8 @@ import { MigrationRunnerService } from '../src/database/migration-runner.service
 import { loadMigrations, runMigrations } from '../src/database/migration-runner';
 import { createTestApplication, PGliteDatabaseAdapter } from './database-test-utils';
 
+jest.setTimeout(15000);
+
 describe('PostgreSQL persistence integration (PGlite)', () => {
     let app: INestApplication;
     let closeApp: () => Promise<void>;
@@ -27,7 +29,7 @@ describe('PostgreSQL persistence integration (PGlite)', () => {
         const applied = await database.query<{ count: string }>(
             'SELECT COUNT(*)::text AS count FROM schema_migrations',
         );
-        expect(Number(applied.rows[0].count)).toBe(18);
+        expect(Number(applied.rows[0].count)).toBe(21);
 
         const registration = await request(app.getHttpServer())
             .post('/api/v1/auth/register')

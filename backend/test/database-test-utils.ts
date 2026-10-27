@@ -3,18 +3,19 @@ import { Test } from '@nestjs/testing';
 import { PGlite, Transaction } from '@electric-sql/pglite';
 import { QueryResultRow } from 'pg';
 import { AppModule } from '../src/app.module';
+import { MailService } from '../src/auth/mail.service';
 import { DatabaseService, QueryExecutor, QueryResult } from '../src/database/database.service';
 import { DATABASE_POOL } from '../src/database/database.types';
 
 export class PGliteDatabaseAdapter {
-    constructor(readonly instance: PGlite = new PGlite()) { }
+    constructor(readonly instance: PGlite = new PGlite()) {}
 
-    async query<T extends QueryResultRow = QueryResultRow>(
-        text: string,
-        values?: any[],
-    ): Promise<QueryResult<T>> {
+    async query<T extends QueryResultRow = QueryResultRow>(text: string, values?: any[]): Promise<QueryResult<T>> {
         const result = await this.instance.query<T>(text, values);
-        return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length };
+        return {
+            rows: result.rows,
+            rowCount: result.affectedRows ?? result.rows.length,
+        };
     }
 
     async exec(text: string) {
@@ -54,15 +55,24 @@ export async function createTestApplication(database?: PGliteDatabaseAdapter) {
         .useValue(ownedDatabase)
         .overrideProvider(DATABASE_POOL)
         .useValue(ownedDatabase)
+        .overrideProvider(MailService)
+        .useValue({
+            isConfigured: true,
+            sendPasswordResetCode: jest.fn().mockResolvedValue(true),
+        })
         .compile();
 
-    const app: INestApplication = moduleFixture.createNestApplication({ rawBody: true });
+    const app: INestApplication = moduleFixture.createNestApplication({
+        rawBody: true,
+    });
     app.setGlobalPrefix('api/v1');
-    app.useGlobalPipes(new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-    }));
+    app.useGlobalPipes(
+        new ValidationPipe({
+            whitelist: true,
+            forbidNonWhitelisted: true,
+            transform: true,
+        }),
+    );
     await app.init();
 
     return {

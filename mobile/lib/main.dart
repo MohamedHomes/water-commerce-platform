@@ -11,6 +11,9 @@ import 'admin/admin_mobile.dart';
 import 'cart_screen.dart';
 import 'catalog_screen.dart';
 import 'customer_ui.dart';
+import 'customer_navigation.dart';
+import 'customer_profile.dart';
+import 'favorites_screen.dart';
 import 'localization.dart';
 
 void main() {
@@ -200,6 +203,14 @@ class OrderRecord {
           DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
+}
+
+String customerOrderDisplayStatus(OrderRecord order) {
+  if (order.status == 'cancelled') return 'cancelled';
+  if (order.status == 'payment_pending' || order.status == 'payment_failed') {
+    return order.status;
+  }
+  return order.deliveryStatus ?? order.status;
 }
 
 class PaymentIntent {
@@ -663,19 +674,51 @@ final GoRouter appRouter = GoRouter(
         ),
       ),
     ),
-    GoRoute(
-      path: '/',
-      builder: (_, __) => const HomeScreen(),
-    ),
-    GoRoute(
-      path: '/cart',
-      builder: (_, __) => const CartScreen(),
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) =>
+          CustomerNavigationShell(navigationShell: navigationShell),
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/categories',
+              builder: (_, state) => CatalogScreen(
+                initialCategoryId: state.extra as String?,
+              ),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(path: '/cart', builder: (_, __) => const CartScreen()),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/favorites',
+              builder: (_, __) => const FavoritesScreen(),
+            ),
+          ],
+        ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/profile',
+              builder: (_, __) => const CustomerProfileScreen(),
+            ),
+          ],
+        ),
+      ],
     ),
     GoRoute(
       path: '/catalog',
-      builder: (_, state) => CatalogScreen(
-        initialCategoryId: state.extra as String?,
-      ),
+      redirect: (_, __) => '/categories',
     ),
     GoRoute(
       path: '/product/:productId',
@@ -708,6 +751,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/notifications',
       builder: (_, __) => const NotificationsScreen(),
+    ),
+    GoRoute(
+      path: '/change-password',
+      builder: (_, __) => const ChangePasswordScreen(),
+    ),
+    GoRoute(
+      path: '/forgot-password',
+      builder: (_, __) => const ForgotPasswordScreen(),
     ),
   ],
 );
@@ -814,16 +865,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             tooltip: localized(context, 'Cart'),
             onPressed: () => context.go('/cart'),
             icon: const Icon(Icons.shopping_bag_outlined),
-          ),
-          IconButton(
-            tooltip: localized(context, 'Sign out'),
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: () async {
-              await _secureStorage.delete(key: 'auth_token');
-              await _secureStorage.delete(key: 'refresh_token');
-              ref.invalidate(cartProvider);
-              if (context.mounted) context.go('/login');
-            },
           ),
         ],
       ),
@@ -1074,6 +1115,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _lastNameController = TextEditingController();
   bool _register = false;
   bool _loading = false;
+  bool _showPassword = false;
   String? _error;
 
   @override
@@ -1086,6 +1128,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    if (_loading) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _loading = true;
@@ -1167,9 +1210,23 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _passwordController,
-                  obscureText: true,
+                  obscureText: !_showPassword,
                   decoration: InputDecoration(
-                      labelText: localized(context, 'Password')),
+                    labelText: localized(context, 'Password'),
+                    suffixIcon: IconButton(
+                      tooltip: localized(
+                        context,
+                        _showPassword ? 'Hide password' : 'Show password',
+                      ),
+                      onPressed: () =>
+                          setState(() => _showPassword = !_showPassword),
+                      icon: Icon(
+                        _showPassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                      ),
+                    ),
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return localized(context, 'Enter your password');
@@ -1219,6 +1276,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? 'I already have an account'
                           : 'Create an account')),
                 ),
+                if (!_register)
+                  TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => context.push('/forgot-password'),
+                    child: Text(localized(context, 'Forgot password?')),
+                  ),
                 if (!_register)
                   TextButton(
                     onPressed:
@@ -2321,7 +2385,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                           {'id': order.id.substring(0, 8)})),
                                       Chip(
                                           label: Text(localizedStatus(
-                                              context, order.status))),
+                                              context,
+                                              customerOrderDisplayStatus(
+                                                  order)))),
                                     ],
                                   ),
                                   Text(

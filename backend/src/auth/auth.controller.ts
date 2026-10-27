@@ -4,10 +4,13 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { RateLimit, RateLimitGuard } from './rate-limit.guard';
 import {
     AuthService,
+    ChangeCustomerPasswordDto,
+    ConfirmPasswordResetDto,
     LoginCustomerDto,
     RefreshTokenDto,
     RegisterCustomerDto,
     UpdateCustomerProfileDto,
+    RequestPasswordResetDto,
 } from './auth.service';
 
 @Controller('auth')
@@ -32,6 +35,28 @@ export class AuthController {
     @UseGuards(RateLimitGuard)
     login(@Body() dto: LoginCustomerDto) {
         return this.authService.login(dto);
+    }
+
+    @Post('password-reset/request')
+    @RateLimit({
+        scope: 'auth-password-reset-request',
+        maxRequests: 5,
+        windowSeconds: 900,
+    })
+    @UseGuards(RateLimitGuard)
+    requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+        return this.authService.requestPasswordReset(dto.email);
+    }
+
+    @Post('password-reset/confirm')
+    @RateLimit({
+        scope: 'auth-password-reset-confirm',
+        maxRequests: 10,
+        windowSeconds: 900,
+    })
+    @UseGuards(RateLimitGuard)
+    confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
+        return this.authService.confirmPasswordReset(dto);
     }
 
     @Post('refresh')
@@ -63,5 +88,16 @@ export class AuthController {
     @UseGuards(JwtAuthGuard, RateLimitGuard)
     updateProfile(@CurrentUser() user: { id: string }, @Body() dto: UpdateCustomerProfileDto) {
         return this.authService.updateProfile(user.id, dto);
+    }
+
+    @Patch('password')
+    @RateLimit({
+        scope: 'auth-password-change',
+        maxRequests: 5,
+        windowSeconds: 900,
+    })
+    @UseGuards(JwtAuthGuard, RateLimitGuard)
+    changePassword(@CurrentUser() user: { id: string }, @Body() dto: ChangeCustomerPasswordDto) {
+        return this.authService.changePassword(user.id, dto);
     }
 }

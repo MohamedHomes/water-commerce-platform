@@ -118,7 +118,38 @@ const _adminTranslations = <String, String>{
 
 const _translations = <String, String>{
   'Sign out': 'تسجيل الخروج',
-  'Home': 'المنزل',
+  'Home': 'الرئيسية',
+  'Categories': 'الفئات',
+  'Favorites': 'المفضلة',
+  'Profile': 'حسابي',
+  'Forgot password?': 'هل نسيت كلمة المرور؟',
+  'Show password': 'إظهار كلمة المرور',
+  'Hide password': 'إخفاء كلمة المرور',
+  'Remove favorite': 'إزالة من المفضلة',
+  'Add to favorites': 'أضف إلى المفضلة',
+  'No favorites yet.': 'لا توجد منتجات في المفضلة بعد.',
+  'Change password': 'تغيير كلمة المرور',
+  'Current password': 'كلمة المرور الحالية',
+  'New password': 'كلمة المرور الجديدة',
+  'Current password is incorrect': 'كلمة المرور الحالية غير صحيحة.',
+  'New password must differ from the current password':
+      'يجب أن تختلف كلمة المرور الجديدة عن الحالية.',
+  'Recovery code is invalid or expired':
+      'رمز الاستعادة غير صحيح أو انتهت صلاحيته.',
+  'Password recovery email is not configured':
+      'خدمة استعادة كلمة المرور عبر البريد غير مهيأة.',
+  'Password changed.': 'تم تغيير كلمة المرور.',
+  'Enter your name.': 'أدخل الاسم.',
+  'Profile saved.': 'تم حفظ الملف الشخصي.',
+  'Save profile': 'حفظ الملف الشخصي',
+  'Notifications are in-app only; preferences are unavailable.':
+      'الإشعارات متاحة داخل التطبيق فقط، ولا تتوفر إعدادات للتفضيلات حالياً.',
+  'Send recovery code': 'إرسال رمز الاستعادة',
+  'If an account matches this email, recovery instructions will be sent if delivery is available.':
+      'إذا كان البريد مرتبطاً بحساب، فستُرسل تعليمات الاستعادة عند توفر خدمة البريد.',
+  'Recovery code': 'رمز الاستعادة',
+  'Reset password': 'إعادة تعيين كلمة المرور',
+  'Password reset complete.': 'تمت إعادة تعيين كلمة المرور.',
   'More': 'المزيد',
   'Customer': 'العميل',
   'Product': 'المنتج',
@@ -412,6 +443,12 @@ String localizedError(BuildContext context, Object error) {
         'Unable to reach the AquaFlow server. Check the API URL and network.',
       );
     }
+    if (response.statusCode == 503 &&
+        response.data is Map<String, dynamic> &&
+        response.data['message'] ==
+            'Password recovery email is not configured') {
+      return localized(context, 'Password recovery email is not configured');
+    }
     if (response.statusCode != null && response.statusCode! >= 500) {
       return localized(
         context,
@@ -482,6 +519,9 @@ String? _knownValidationError(BuildContext context, String message) {
 String _knownError(BuildContext context, String message) {
   const known = {
     'Invalid email or password',
+    'Current password is incorrect',
+    'New password must differ from the current password',
+    'Recovery code is invalid or expired',
     'Customer with this email already exists',
     'Email, password, first name, and last name are required',
     'Checkout session not found',

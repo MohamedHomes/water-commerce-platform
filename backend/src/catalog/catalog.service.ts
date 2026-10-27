@@ -134,7 +134,7 @@ interface CatalogProductRow extends QueryResultRow {
 
 @Injectable()
 export class CatalogService {
-    constructor(private readonly database: DatabaseService) { }
+    constructor(private readonly database: DatabaseService) {}
 
     async getCategories() {
         const result = await this.database.query<CategoryRecord>(
@@ -254,6 +254,29 @@ export class CatalogService {
         return this.mapProducts(result.rows)[0];
     }
 
+    async getProductsByIds(ids: string[]) {
+        if (ids.length === 0) {
+            return [];
+        }
+        const result = await this.database.query<CatalogProductRow>(
+            `
+                SELECT p.*, v.id AS variant_id, v.sku AS variant_sku,
+                    v.barcode AS variant_barcode, v.package_size AS variant_package_size,
+                    v.quantity AS variant_quantity, v.volume AS variant_volume,
+                    v.weight AS variant_weight, v.dimensions AS variant_dimensions,
+                    v.price AS variant_price, v.compare_at_price AS variant_compare_at_price,
+                    v.discount_percent AS variant_discount_percent,
+                    v.is_available AS variant_is_available
+                FROM products p
+                LEFT JOIN product_variants v ON v.product_id = p.id
+                WHERE p.id = ANY($1::varchar[]) AND p.is_active = TRUE
+                ORDER BY array_position($1::varchar[], p.id), v.id
+            `,
+            [ids],
+        );
+        return this.mapProducts(result.rows);
+    }
+
     async createProduct(input: Partial<ProductRecord>) {
         const now = new Date().toISOString();
         const id = input.id ?? randomUUID();
@@ -272,17 +295,26 @@ export class CatalogService {
                     )
                 `,
                 [
-                    id, input.name ?? 'New Product', input.nameAr ?? null,
+                    id,
+                    input.name ?? 'New Product',
+                    input.nameAr ?? null,
                     input.slug ?? `new-product-${id}`,
                     input.categoryId ?? SEED_CATEGORY_IDS.water,
                     input.brandId ?? SEED_BRAND_IDS.aquaflow,
-                    input.description ?? 'New product', input.descriptionAr ?? null,
+                    input.description ?? 'New product',
+                    input.descriptionAr ?? null,
                     input.price ?? 0,
-                    input.compareAtPrice ?? null, input.discountPercent ?? null,
-                    input.availability ?? 'in_stock', input.imageUrl ?? null,
-                    input.packageSize ?? '1L', input.quantity ?? 0, input.volume ?? '1L',
-                    input.weight ?? '1kg', input.dimensions ?? '10 x 10 x 10 cm',
-                    input.isActive ?? true, now,
+                    input.compareAtPrice ?? null,
+                    input.discountPercent ?? null,
+                    input.availability ?? 'in_stock',
+                    input.imageUrl ?? null,
+                    input.packageSize ?? '1L',
+                    input.quantity ?? 0,
+                    input.volume ?? '1L',
+                    input.weight ?? '1kg',
+                    input.dimensions ?? '10 x 10 x 10 cm',
+                    input.isActive ?? true,
+                    now,
                 ],
             );
 
@@ -296,10 +328,19 @@ export class CatalogService {
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     `,
                     [
-                        variant.id ?? randomUUID(), id, variant.sku, variant.barcode || null,
-                        variant.packageSize, variant.quantity, variant.volume, variant.weight,
-                        variant.dimensions, variant.price, variant.compareAtPrice ?? null,
-                        variant.discountPercent ?? null, variant.isAvailable,
+                        variant.id ?? randomUUID(),
+                        id,
+                        variant.sku,
+                        variant.barcode || null,
+                        variant.packageSize,
+                        variant.quantity,
+                        variant.volume,
+                        variant.weight,
+                        variant.dimensions,
+                        variant.price,
+                        variant.compareAtPrice ?? null,
+                        variant.discountPercent ?? null,
+                        variant.isAvailable,
                     ],
                 );
             }
@@ -355,8 +396,10 @@ export class CatalogService {
                     weight: row.variant_weight ?? '',
                     dimensions: row.variant_dimensions ?? '',
                     price: Number(row.variant_price),
-                    compareAtPrice: row.variant_compare_at_price === null ? undefined : Number(row.variant_compare_at_price),
-                    discountPercent: row.variant_discount_percent === null ? undefined : Number(row.variant_discount_percent),
+                    compareAtPrice:
+                        row.variant_compare_at_price === null ? undefined : Number(row.variant_compare_at_price),
+                    discountPercent:
+                        row.variant_discount_percent === null ? undefined : Number(row.variant_discount_percent),
                     isAvailable: row.variant_is_available ?? false,
                 });
             }
