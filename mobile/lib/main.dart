@@ -11,6 +11,7 @@ import 'admin/admin_mobile.dart';
 import 'cart_screen.dart';
 import 'catalog_screen.dart';
 import 'customer_ui.dart';
+import 'customer_api.dart';
 import 'customer_navigation.dart';
 import 'customer_profile.dart';
 import 'favorites_screen.dart';
@@ -331,8 +332,12 @@ class DeliveryZone {
 
 class ApiClient {
   ApiClient._();
-  static final Dio dio = Dio(BaseOptions(
-      baseUrl: apiBaseUrl, headers: {'Content-Type': 'application/json'}));
+  static final Dio dio = CustomerApi.createDio(
+    dio: Dio(BaseOptions(
+      baseUrl: apiBaseUrl,
+      headers: {'Content-Type': 'application/json'},
+    )),
+  );
 
   static Future<void> authenticate({
     required bool register,
@@ -352,10 +357,10 @@ class ApiClient {
             }
           : {'email': email, 'password': password},
     );
-    await _secureStorage.write(
-        key: 'auth_token', value: response.data['accessToken'] as String);
-    await _secureStorage.write(
-        key: 'refresh_token', value: response.data['refreshToken'] as String);
+    await CustomerSession.saveTokens(
+      accessToken: response.data['accessToken'] as String,
+      refreshToken: response.data['refreshToken'] as String,
+    );
   }
 
   static Future<String> readToken() async {
@@ -632,6 +637,7 @@ class AddressController extends StateNotifier<AddressState> {
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/login',
+  refreshListenable: CustomerSession.changes,
   redirect: (_, state) async {
     if (state.matchedLocation.startsWith('/admin')) {
       final hasAdminSession = await _adminApi.hasStoredSession();

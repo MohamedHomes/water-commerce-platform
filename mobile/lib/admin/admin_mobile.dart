@@ -557,8 +557,6 @@ class AdminOperationsTab extends StatefulWidget {
 
 class _AdminOperationsTabState extends State<AdminOperationsTab> {
   String _section = 'Inventory';
-  int _page = 1;
-  String? _status;
 
   @override
   Widget build(BuildContext context) {
@@ -648,159 +646,930 @@ class _AdminOperationsTabState extends State<AdminOperationsTab> {
       );
     }
     if (_section == 'Orders') {
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Text(localizedAdmin(context, 'Status')),
-                const SizedBox(width: 12),
-                DropdownButton<String?>(
-                  value: _status,
-                  items: [
-                    DropdownMenuItem(
-                      value: null,
-                      child: Text(localizedAdmin(context, 'All')),
-                    ),
-                    DropdownMenuItem(
-                        value: 'payment_pending',
-                        child:
-                            Text(localizedStatus(context, 'payment_pending'))),
-                    DropdownMenuItem(
-                      value: 'placed',
-                      child: Text(localizedStatus(context, 'placed')),
-                    ),
-                    DropdownMenuItem(
-                      value: 'paid',
-                      child: Text(localizedStatus(context, 'paid')),
-                    ),
-                    DropdownMenuItem(
-                      value: 'cancelled',
-                      child: Text(localizedStatus(context, 'cancelled')),
-                    ),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _status = value;
-                    _page = 1;
-                  }),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: localizedAdmin(context, 'Previous page'),
-                  onPressed: _page > 1 ? () => setState(() => _page--) : null,
-                  icon: Icon(
-                    Directionality.of(context) == TextDirection.rtl
-                        ? Icons.chevron_right
-                        : Icons.chevron_left,
-                  ),
-                ),
-                Text('$_page'),
-                IconButton(
-                  tooltip: localizedAdmin(context, 'Next page'),
-                  onPressed: () => setState(() => _page++),
-                  icon: Icon(
-                    Directionality.of(context) == TextDirection.rtl
-                        ? Icons.chevron_left
-                        : Icons.chevron_right,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: AdminCollection(
-              key: ValueKey('orders-$_page-$_status'),
-              title: localizedAdmin(context, 'Orders'),
-              load: () async => _items(
-                await widget.api.get(
-                  '/admin/orders',
-                  query: {
-                    'page': _page,
-                    'limit': 20,
-                    if (_status != null) 'status': _status!,
-                  },
-                ),
-              ),
-              itemBuilder: (context, order, reload) => Card(
-                child: ListTile(
-                  title: Text(_shortId(order['id'])),
-                  subtitle: Text(
-                    '${localizedStatus(context, _string(order['status']))} · '
-                    '${localizedStatus(context, _string(order['paymentMethod']))}',
-                  ),
-                  trailing: Text('${order['currency']} ${order['total']}'),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
+      return _AdminOrdersView(api: widget.api);
     }
-    return AdminCollection(
-      key: const ValueKey('admin-deliveries'),
-      title: localizedAdmin(context, 'Deliveries'),
-      load: () async => _items(await widget.api.get('/admin/deliveries')),
-      itemBuilder: (context, delivery, reload) {
-        final status = _string(delivery['status']);
-        final nextStatuses = switch (status) {
-          'pending_dispatch' => ['assigned'],
-          'assigned' => ['picked_up', 'failed'],
-          'picked_up' => ['delivered', 'failed'],
-          _ => <String>[],
-        };
-        return Card(
-          child: ListTile(
-            title: Text(
-              localizedAdmin(
-                context,
-                'Order {id}',
-                {'id': _shortId(delivery['order_id'])},
+    return _AdminDeliveriesView(api: widget.api);
+  }
+}
+
+class _AdminOrdersView extends StatefulWidget {
+  const _AdminOrdersView({required this.api});
+
+  final AdminApi api;
+
+  @override
+  State<_AdminOrdersView> createState() => _AdminOrdersViewState();
+}
+
+class _AdminOrdersViewState extends State<_AdminOrdersView> {
+  static const _pageSize = 20;
+
+  int _page = 1;
+  String? _status;
+  String _search = '';
+  late Future<Map<String, dynamic>> _orders;
+
+  @override
+  void initState() {
+    super.initState();
+    _orders = _load();
+  }
+
+  Future<Map<String, dynamic>> _load() => widget.api.get(
+        '/admin/orders',
+        query: {
+          'page': _page,
+          'limit': _pageSize,
+          if (_status != null) 'status': _status!,
+        },
+      );
+
+  Future<void> _refresh() async {
+    final request = _load();
+    setState(() => _orders = request);
+    await request;
+  }
+
+  void _changeStatus(String? value) {
+    setState(() {
+      _status = value;
+      _page = 1;
+      _orders = _load();
+    });
+  }
+
+  void _changePage(int value) {
+    setState(() {
+      _page = value;
+      _orders = _load();
+    });
+  }
+
+  Future<void> _openOrder(
+    BuildContext context,
+    String orderId,
+  ) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminOrderDetailsScreen(
+          api: widget.api,
+          orderId: orderId,
+          onUpdated: _refresh,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _orders,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _MessageState(
+            message: localizedAdmin(
+              context,
+              widget.api.errorMessage(snapshot.error!),
+            ),
+            actionLabel: localizedAdmin(context, 'Retry'),
+            onAction: () => setState(() => _orders = _load()),
+          );
+        }
+
+        final response = snapshot.data!;
+        final orders = _items(response);
+        final total = _integer(response['total']);
+        final pageCount = total == 0 ? 1 : (total / _pageSize).ceil();
+        final searchTerm = _search.trim().toLowerCase();
+        final filtered = orders.where((order) {
+          final values = [
+            order['id'],
+            order['customerId'],
+            order['status'],
+            order['paymentMethod'],
+          ];
+          return values.any(
+            (value) => _string(value).toLowerCase().contains(searchTerm),
+          );
+        }).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    localizedAdmin(context, '{count} results', {
+                      'count': total,
+                    }),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownButton<String?>(
+                        value: _status,
+                        items: [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text(localizedAdmin(context, 'All')),
+                          ),
+                          for (final status in [
+                            'payment_pending',
+                            'placed',
+                            'paid',
+                            'cancelled',
+                          ])
+                            DropdownMenuItem(
+                              value: status,
+                              child: Text(localizedStatus(context, status)),
+                            ),
+                        ],
+                        onChanged: _changeStatus,
+                      ),
+                      SizedBox(
+                        width: 220,
+                        child: TextField(
+                          decoration: InputDecoration(
+                            labelText:
+                                localizedAdmin(context, 'Search current page'),
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                          ),
+                          onChanged: (value) => setState(() => _search = value),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-            subtitle: Text(
-              '${localizedStatus(context, status)} · ${delivery['estimated_minutes']} ${localizedAdmin(context, 'minutes')}',
-            ),
-            trailing: nextStatuses.isEmpty
-                ? null
-                : PopupMenuButton<String>(
-                    tooltip: localizedAdmin(context, 'Update delivery'),
-                    onSelected: (next) async {
-                      try {
-                        await widget.api.patch(
-                          '/admin/deliveries/${delivery['id']}/status',
-                          data: {
-                            'status': next,
-                            'note': 'Updated from AquaFlow Admin mobile',
-                          },
-                        );
-                        reload();
-                      } catch (error) {
-                        if (context.mounted) {
-                          _showError(context, widget.api, error);
-                        }
-                      }
-                    },
-                    itemBuilder: (_) => nextStatuses
-                        .map((value) => PopupMenuItem(
-                              value: value,
-                              child: Text(
-                                localizedAdmin(
-                                  context,
-                                  'Mark {status}',
-                                  {
-                                    'status': localizedStatus(context, value),
-                                  },
-                                ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    if (filtered.isEmpty)
+                      _EmptyState(
+                        message: localizedAdmin(
+                          context,
+                          orders.isEmpty
+                              ? 'No orders found.'
+                              : 'No matching results.',
+                        ),
+                      )
+                    else
+                      ...filtered.map((order) {
+                        final id = _string(order['id']);
+                        final createdAt =
+                            DateTime.tryParse(_string(order['createdAt']));
+                        return Card(
+                          child: ListTile(
+                            onTap: id.isEmpty
+                                ? null
+                                : () => _openOrder(context, id),
+                            title: Text(
+                              localizedAdmin(context, 'Order {id}', {
+                                'id': _shortId(id),
+                              }),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${localizedStatus(context, _string(order['status']))} · '
+                                    '${localizedStatus(context, _string(order['paymentMethod']))}',
+                                  ),
+                                  Text(
+                                    localizedAdmin(context, 'Customer {id}', {
+                                      'id': _shortId(order['customerId']),
+                                    }),
+                                  ),
+                                  if (createdAt != null)
+                                    Text(
+                                      MaterialLocalizations.of(context)
+                                          .formatMediumDate(
+                                              createdAt.toLocal()),
+                                    ),
+                                ],
                               ),
-                            ))
-                        .toList(),
+                            ),
+                            isThreeLine: true,
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${_string(order['currency'])} ${order['total']}',
+                                  style: Theme.of(context).textTheme.titleSmall,
+                                ),
+                                const Icon(Icons.chevron_right, size: 18),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    tooltip: localizedAdmin(context, 'Previous page'),
+                    onPressed: _page > 1 ? () => _changePage(_page - 1) : null,
+                    icon: const Icon(Icons.chevron_left),
                   ),
-          ),
+                  Text(localizedAdmin(context, 'Page {page} of {total}', {
+                    'page': _page,
+                    'total': pageCount,
+                  })),
+                  IconButton(
+                    tooltip: localizedAdmin(context, 'Next page'),
+                    onPressed:
+                        _page < pageCount ? () => _changePage(_page + 1) : null,
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );
   }
+}
+
+class _AdminDeliveriesView extends StatefulWidget {
+  const _AdminDeliveriesView({required this.api});
+
+  final AdminApi api;
+
+  @override
+  State<_AdminDeliveriesView> createState() => _AdminDeliveriesViewState();
+}
+
+class _AdminDeliveriesViewState extends State<_AdminDeliveriesView> {
+  String? _status;
+  String _search = '';
+  late Future<List<Map<String, dynamic>>> _deliveries;
+
+  @override
+  void initState() {
+    super.initState();
+    _deliveries = _load();
+  }
+
+  Future<List<Map<String, dynamic>>> _load() async =>
+      _items(await widget.api.get('/admin/deliveries'));
+
+  Future<void> _refresh() async {
+    final request = _load();
+    setState(() => _deliveries = request);
+    await request;
+  }
+
+  Future<void> _openOrder(String orderId) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminOrderDetailsScreen(
+          api: widget.api,
+          orderId: orderId,
+          onUpdated: _refresh,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _deliveries,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _MessageState(
+            message: localizedAdmin(
+              context,
+              widget.api.errorMessage(snapshot.error!),
+            ),
+            actionLabel: localizedAdmin(context, 'Retry'),
+            onAction: () => setState(() => _deliveries = _load()),
+          );
+        }
+
+        final deliveries = snapshot.data ?? const <Map<String, dynamic>>[];
+        final searchTerm = _search.trim().toLowerCase();
+        final filtered = deliveries.where((delivery) {
+          final matchesStatus =
+              _status == null || delivery['status'] == _status;
+          final matchesSearch = [
+            delivery['order_id'],
+            delivery['status'],
+          ].any(
+            (value) => _string(value).toLowerCase().contains(searchTerm),
+          );
+          return matchesStatus && matchesSearch;
+        }).toList();
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    localizedAdmin(context, '{count} results', {
+                      'count': filtered.length,
+                    }),
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      DropdownButton<String?>(
+                        value: _status,
+                        items: [
+                          DropdownMenuItem(
+                            value: null,
+                            child: Text(localizedAdmin(context, 'All')),
+                          ),
+                          for (final status in [
+                            'pending_dispatch',
+                            'assigned',
+                            'picked_up',
+                            'delivered',
+                            'failed',
+                            'cancelled',
+                          ])
+                            DropdownMenuItem(
+                              value: status,
+                              child: Text(localizedStatus(context, status)),
+                            ),
+                        ],
+                        onChanged: (value) => setState(() => _status = value),
+                      ),
+                      SizedBox(
+                        width: 220,
+                        child: TextField(
+                          decoration: InputDecoration(
+                            labelText:
+                                localizedAdmin(context, 'Search current page'),
+                            prefixIcon: const Icon(Icons.search),
+                            isDense: true,
+                          ),
+                          onChanged: (value) => setState(() => _search = value),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(12),
+                  children: [
+                    if (filtered.isEmpty)
+                      _EmptyState(
+                        message: localizedAdmin(
+                          context,
+                          deliveries.isEmpty
+                              ? 'No deliveries found.'
+                              : 'No matching results.',
+                        ),
+                      )
+                    else
+                      ...filtered.map((delivery) {
+                        final orderId = _string(delivery['order_id']);
+                        return Card(
+                          child: ListTile(
+                            onTap: orderId.isEmpty
+                                ? null
+                                : () => _openOrder(orderId),
+                            title: Text(
+                              localizedAdmin(context, 'Order {id}', {
+                                'id': _shortId(orderId),
+                              }),
+                            ),
+                            subtitle: Text(
+                              '${localizedStatus(context, _string(delivery['status']))} · '
+                              '${delivery['estimated_minutes']} ${localizedAdmin(context, 'minutes')}',
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class AdminOrderDetailsScreen extends StatefulWidget {
+  const AdminOrderDetailsScreen({
+    required this.api,
+    required this.orderId,
+    this.onUpdated,
+    super.key,
+  });
+
+  final AdminApi api;
+  final String orderId;
+  final Future<void> Function()? onUpdated;
+
+  @override
+  State<AdminOrderDetailsScreen> createState() =>
+      _AdminOrderDetailsScreenState();
+}
+
+class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
+  late Future<Map<String, dynamic>> _details;
+  bool _updatingDelivery = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _details = _load();
+  }
+
+  Future<Map<String, dynamic>> _load() => widget.api.get(
+        '/admin/orders/${Uri.encodeComponent(widget.orderId)}',
+      );
+
+  Future<void> _refresh() async {
+    final request = _load();
+    setState(() => _details = request);
+    await request;
+  }
+
+  Future<void> _updateDelivery(
+    Map<String, dynamic> delivery,
+    String nextStatus,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(localizedAdmin(context, 'Update delivery')),
+        content: Text(
+          localizedAdmin(
+              context, 'Confirm delivery status change to {status}?', {
+            'status': localizedStatus(context, nextStatus),
+          }),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(localizedAdmin(context, 'Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(localizedAdmin(context, 'Confirm')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _updatingDelivery = true);
+    try {
+      await widget.api.patch(
+        '/admin/deliveries/${Uri.encodeComponent(_string(delivery['id']))}/status',
+        data: {
+          'status': nextStatus,
+          'note': localizedAdmin(context, 'Updated from AquaFlow Admin mobile'),
+        },
+      );
+      await _refresh();
+      await widget.onUpdated?.call();
+    } catch (error) {
+      if (mounted) _showError(context, widget.api, error);
+    } finally {
+      if (mounted) setState(() => _updatingDelivery = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(localizedAdmin(context, 'Order details')),
+        actions: const [LanguageSwitch()],
+      ),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _details,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _MessageState(
+              message: localizedAdmin(
+                context,
+                widget.api.errorMessage(snapshot.error!),
+              ),
+              actionLabel: localizedAdmin(context, 'Retry'),
+              onAction: () => setState(() => _details = _load()),
+            );
+          }
+
+          final order = snapshot.data!;
+          final customer = _map(order['customer']);
+          final summary = _map(order['summary']);
+          final payments = _items({'items': order['payments']});
+          final delivery = _map(order['delivery']);
+          final items = _items({'items': order['items']});
+          return RefreshIndicator(
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              children: [
+                Text(
+                  localizedAdmin(context, 'Order {id}', {
+                    'id': _shortId(order['id']),
+                  }),
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      label: Text(localizedStatus(
+                        context,
+                        _string(order['status']),
+                      )),
+                    ),
+                    Chip(
+                      label: Text(
+                        '${localizedAdmin(context, 'Payment')}: '
+                        '${localizedStatus(context, _string(order['paymentStatus']))}',
+                      ),
+                    ),
+                  ],
+                ),
+                _detailsCard(
+                  context,
+                  'Order information',
+                  [
+                    _detailLine(context, 'Order number', _string(order['id'])),
+                    _detailLine(
+                      context,
+                      'Payment method',
+                      localizedStatus(context, _string(order['paymentMethod'])),
+                    ),
+                    _detailLine(
+                      context,
+                      'Delivery option',
+                      localizedStatus(
+                          context, _string(order['deliveryOption'])),
+                    ),
+                    _detailLine(
+                      context,
+                      'Created',
+                      _formatDateTime(context, order['createdAt']),
+                    ),
+                    _detailLine(
+                      context,
+                      'Last updated',
+                      _formatDateTime(context, order['updatedAt']),
+                    ),
+                    if (order['cancelledAt'] != null)
+                      _detailLine(
+                        context,
+                        'Cancelled',
+                        _formatDateTime(context, order['cancelledAt']),
+                      ),
+                  ],
+                ),
+                _detailsCard(
+                  context,
+                  'Customer',
+                  [
+                    _detailLine(
+                      context,
+                      'Name',
+                      '${_string(customer['firstName'])} ${_string(customer['lastName'])}'
+                          .trim(),
+                    ),
+                    _detailLine(context, 'Email', _string(customer['email'])),
+                    _detailLine(context, 'Phone', _string(customer['phone'])),
+                  ],
+                ),
+                _detailsCard(
+                  context,
+                  'Order items',
+                  items.isEmpty
+                      ? [Text(localizedAdmin(context, 'No order items found.'))]
+                      : items
+                          .map((item) => ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(_displayName(context, item)),
+                                subtitle: Text(
+                                  '${localizedAdmin(context, 'Quantity')}: ${item['quantity']} · '
+                                  '${_string(summary['currency'])} ${item['unitPrice']}',
+                                ),
+                                trailing: Text(
+                                  '${_string(summary['currency'])} ${item['lineTotal']}',
+                                ),
+                              ))
+                          .toList(),
+                ),
+                _detailsCard(
+                  context,
+                  'Totals',
+                  [
+                    _detailLine(
+                        context, 'Subtotal', _money(summary, 'subtotal')),
+                    _detailLine(
+                        context, 'Discount', _money(summary, 'discount')),
+                    if (summary['promotionCode'] != null)
+                      _detailLine(
+                        context,
+                        'Promotion',
+                        _string(summary['promotionCode']),
+                      ),
+                    _detailLine(
+                      context,
+                      'Delivery fee',
+                      _money(summary, 'deliveryFee'),
+                    ),
+                    _detailLine(
+                        context, 'Service fee', _money(summary, 'serviceFee')),
+                    _detailLine(context, 'Total', _money(summary, 'total')),
+                  ],
+                ),
+                _detailsCard(
+                  context,
+                  'Delivery address',
+                  _snapshotLines(context, order['address']),
+                ),
+                _detailsCard(
+                  context,
+                  'Delivery zone',
+                  _snapshotLines(context, order['deliveryZone']),
+                ),
+                _detailsCard(
+                  context,
+                  'Payment information',
+                  payments.isEmpty
+                      ? [Text(localizedAdmin(context, 'No payment record.'))]
+                      : payments
+                          .map((payment) => Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _detailLine(
+                                    context,
+                                    'Provider',
+                                    _string(payment['provider']),
+                                  ),
+                                  _detailLine(
+                                    context,
+                                    'Status',
+                                    localizedStatus(
+                                      context,
+                                      _string(payment['status']),
+                                    ),
+                                  ),
+                                  _detailLine(
+                                    context,
+                                    'Amount',
+                                    '${_string(payment['currency'])} ${payment['amount']}',
+                                  ),
+                                  _detailLine(
+                                    context,
+                                    'Created',
+                                    _formatDateTime(
+                                        context, payment['createdAt']),
+                                  ),
+                                  if (payment['failureCode'] != null)
+                                    _detailLine(
+                                      context,
+                                      'Failure code',
+                                      _string(payment['failureCode']),
+                                    ),
+                                  const Divider(),
+                                ],
+                              ))
+                          .toList(),
+                ),
+                if (order['statusHistory'] == null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      localizedAdmin(
+                        context,
+                        'Order status history is not available in the current API.',
+                      ),
+                    ),
+                  ),
+                if (delivery.isNotEmpty) _deliveryDetails(context, delivery),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _deliveryDetails(
+    BuildContext context,
+    Map<String, dynamic> delivery,
+  ) {
+    final status = _string(delivery['status']);
+    final nextStatuses = switch (status) {
+      'pending_dispatch' => ['assigned'],
+      'assigned' => ['picked_up', 'failed'],
+      'picked_up' => ['delivered', 'failed'],
+      _ => <String>[],
+    };
+    final events = _items({'items': delivery['events']});
+    return _detailsCard(
+      context,
+      'Delivery details',
+      [
+        _detailLine(
+          context,
+          'Status',
+          localizedStatus(context, status),
+        ),
+        _detailLine(
+          context,
+          'Tracking code',
+          _string(delivery['trackingCode']),
+        ),
+        _detailLine(
+          context,
+          'Estimated delivery',
+          '${delivery['estimatedMinutes']} ${localizedAdmin(context, 'minutes')}',
+        ),
+        _detailLine(
+          context,
+          'Delivered at',
+          _formatDateTime(context, delivery['deliveredAt']),
+        ),
+        if (events.isNotEmpty) ...[
+          const Divider(),
+          Text(
+            localizedAdmin(context, 'Delivery history'),
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          ...events.map((event) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(localizedStatus(
+                  context,
+                  _string(event['status']),
+                )),
+                subtitle: Text(
+                  '${_string(event['note'])}\n'
+                  '${_formatDateTime(context, event['createdAt'])}',
+                ),
+              )),
+        ],
+        if (nextStatuses.isNotEmpty) ...[
+          const Divider(),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final next in nextStatuses)
+                FilledButton.tonal(
+                  onPressed: _updatingDelivery
+                      ? null
+                      : () => _updateDelivery(delivery, next),
+                  child: Text(localizedAdmin(
+                    context,
+                    'Mark {status}',
+                    {'status': localizedStatus(context, next)},
+                  )),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+Widget _detailsCard(
+  BuildContext context,
+  String title,
+  List<Widget> children,
+) =>
+    Card(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 10),
+            ...children,
+          ],
+        ),
+      ),
+    );
+
+Widget _detailLine(BuildContext context, String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              localizedAdmin(context, label),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value.isEmpty ? '—' : value,
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
+
+String _money(Map<String, dynamic> summary, String key) =>
+    '${_string(summary['currency'])} ${summary[key]}';
+
+String _formatDateTime(BuildContext context, Object? value) {
+  final date = DateTime.tryParse(_string(value));
+  if (date == null) return '—';
+  return '${MaterialLocalizations.of(context).formatFullDate(date.toLocal())} '
+      '${TimeOfDay.fromDateTime(date.toLocal()).format(context)}';
+}
+
+Map<String, dynamic> _map(Object? value) =>
+    value is Map<String, dynamic> ? value : <String, dynamic>{};
+
+int _integer(Object? value) =>
+    value is num ? value.toInt() : int.tryParse(_string(value)) ?? 0;
+
+List<Widget> _snapshotLines(BuildContext context, Object? value) {
+  final snapshot = _map(value);
+  const labels = <String, String>{
+    'recipientName': 'Recipient',
+    'recipient_name': 'Recipient',
+    'phone': 'Phone',
+    'city': 'City',
+    'district': 'District',
+    'street': 'Street',
+    'building': 'Building',
+    'apartment': 'Apartment',
+    'floor': 'Floor',
+    'notes': 'Notes',
+    'name': 'Name',
+    'baseFee': 'Base fee',
+    'base_fee': 'Base fee',
+    'expressFee': 'Express fee',
+    'express_fee': 'Express fee',
+    'estimatedMinutes': 'Estimated delivery',
+    'estimated_minutes': 'Estimated delivery',
+    'label': 'Address label',
+  };
+  return snapshot.entries
+      .where((entry) => labels.containsKey(entry.key) && entry.value != null)
+      .map((entry) => _detailLine(
+            context,
+            labels[entry.key]!,
+            _string(entry.value),
+          ))
+      .toList();
 }
 
 class AdminMoreTab extends StatefulWidget {

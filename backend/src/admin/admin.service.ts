@@ -311,6 +311,31 @@ interface AdminOrderRow extends QueryResultRow {
     created_at: Date | string;
 }
 
+interface AdminOrderDetailsRow extends QueryResultRow {
+    id: string;
+    customer_id: string;
+    customer_email: string;
+    customer_first_name: string;
+    customer_last_name: string;
+    customer_phone: string | null;
+    status: string;
+    payment_method: string;
+    delivery_option: string;
+    address_snapshot: Record<string, unknown>;
+    delivery_zone_snapshot: Record<string, unknown>;
+    cart_snapshot: { items?: unknown[] };
+    subtotal: string | number;
+    discount_amount: string | number;
+    promotion_code: string | null;
+    delivery_fee: string | number;
+    service_fee: string | number;
+    total: string | number;
+    currency: string;
+    created_at: Date | string;
+    updated_at: Date | string;
+    cancelled_at: Date | string | null;
+}
+
 @Injectable()
 export class AdminService {
     constructor(private readonly database: DatabaseService) { }
@@ -381,6 +406,159 @@ export class AdminService {
             total: Number(count.rows[0].count),
             page,
             limit,
+        };
+    }
+
+    async getOrderDetails(orderId: string) {
+        const result = await this.database.query<AdminOrderDetailsRow>(
+            `
+                SELECT o.id, o.customer_id, c.email AS customer_email,
+                    c.first_name AS customer_first_name, c.last_name AS customer_last_name,
+                    c.phone AS customer_phone, o.status, o.payment_method,
+                    o.delivery_option, o.address_snapshot, o.delivery_zone_snapshot,
+                    o.cart_snapshot, o.subtotal, o.discount_amount, o.promotion_code,
+                    o.delivery_fee, o.service_fee, o.total, o.currency,
+                    o.created_at, o.updated_at, o.cancelled_at
+                FROM orders o
+                JOIN customers c ON c.id = o.customer_id
+                WHERE o.id = $1
+            `,
+            [orderId],
+        );
+        const order = result.rows[0];
+        if (!order) {
+            throw new NotFoundException('Order not found');
+        }
+
+        const [paymentResult, deliveryResult] = await Promise.all([
+            this.database.query<{
+                id: string;
+                provider: string;
+                status: string;
+                amount: string | number;
+                currency: string;
+                failure_code: string | null;
+                created_at: Date | string;
+                updated_at: Date | string;
+            }>(
+                `
+                    SELECT id, provider, status, amount, currency, failure_code,
+                        created_at, updated_at
+                    FROM payments
+                    WHERE order_id = $1
+                    ORDER BY created_at, id
+                `,
+                [orderId],
+            ),
+            this.database.query<{
+                id: string;
+                status: string;
+                estimated_minutes: number;
+                tracking_code: string;
+                created_at: Date | string;
+                updated_at: Date | string;
+                delivered_at: Date | string | null;
+            }>(
+                `
+                    SELECT id, status, estimated_minutes, tracking_code,
+                        created_at, updated_at, delivered_at
+                    FROM deliveries
+                    WHERE order_id = $1
+                `,
+                [orderId],
+            ),
+        ]);
+        const payments = paymentResult.rows.map((payment) => ({
+            id: payment.id,
+            provider: payment.provider,
+            status: payment.status,
+            amount: Number(payment.amount),
+            currency: payment.currency,
+            failureCode: payment.failure_code,
+            createdAt: new Date(payment.created_at).toISOString(),
+            updatedAt: new Date(payment.updated_at).toISOString(),
+        }));
+        const delivery = deliveryResult.rows[0];
+        let deliveryDetails: {
+            id: string;
+            status: string;
+            estimatedMinutes: number;
+            trackingCode: string;
+            createdAt: string;
+            updatedAt: string;
+            deliveredAt: string | null;
+            events: {
+                status: string;
+                note: string;
+                createdAt: string;
+            }[];
+        } | null = null;
+        if (delivery) {
+            const eventResult = await this.database.query<{
+                status: string;
+                note: string;
+                created_at: Date | string;
+            }>(
+                `
+                    SELECT status, note, created_at
+                    FROM delivery_events
+                    WHERE delivery_id = $1
+                    ORDER BY created_at, id
+                `,
+                [delivery.id],
+            );
+            deliveryDetails = {
+                id: delivery.id,
+                status: delivery.status,
+                estimatedMinutes: delivery.estimated_minutes,
+                trackingCode: delivery.tracking_code,
+                createdAt: new Date(delivery.created_at).toISOString(),
+                updatedAt: new Date(delivery.updated_at).toISOString(),
+                deliveredAt: delivery.delivered_at
+                    ? new Date(delivery.delivered_at).toISOString()
+                    : null,
+                events: eventResult.rows.map((event) => ({
+                    status: event.status,
+                    note: event.note,
+                    createdAt: new Date(event.created_at).toISOString(),
+                })),
+            };
+        }
+
+        return {
+            id: order.id,
+            status: order.status,
+            paymentStatus: payments.length
+                ? payments[payments.length - 1].status
+                : null,
+            paymentMethod: order.payment_method,
+            deliveryOption: order.delivery_option,
+            customer: {
+                id: order.customer_id,
+                email: order.customer_email,
+                firstName: order.customer_first_name,
+                lastName: order.customer_last_name,
+                phone: order.customer_phone,
+            },
+            items: order.cart_snapshot.items ?? [],
+            address: order.address_snapshot,
+            deliveryZone: order.delivery_zone_snapshot,
+            summary: {
+                subtotal: Number(order.subtotal),
+                discount: Number(order.discount_amount),
+                promotionCode: order.promotion_code,
+                deliveryFee: Number(order.delivery_fee),
+                serviceFee: Number(order.service_fee),
+                total: Number(order.total),
+                currency: order.currency,
+            },
+            payments,
+            delivery: deliveryDetails,
+            createdAt: new Date(order.created_at).toISOString(),
+            updatedAt: new Date(order.updated_at).toISOString(),
+            cancelledAt: order.cancelled_at
+                ? new Date(order.cancelled_at).toISOString()
+                : null,
         };
     }
 

@@ -120,7 +120,7 @@ void main() {
 
     expect(find.text('42'), findsOneWidget);
     expect(find.text('Recent orders'), findsOneWidget);
-    expect(find.text('order-12'), findsOneWidget);
+    expect(find.text('12345678'), findsOneWidget);
     expect(api.getPaths, contains('/admin/dashboard'));
     expect(api.getPaths, contains('/admin/orders'));
   });
@@ -139,6 +139,131 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
     expect(find.text('Recent orders'), findsOneWidget);
+  });
+
+  testWidgets(
+      'orders support API status filtering, current-page search, and pagination',
+      (tester) async {
+    final api = _FakeAdminApi()..ordersTotal = 25;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Orders'));
+    await tester.pumpAndSettle();
+
+    expect(api.getPaths, contains('/admin/orders'));
+    expect(api.orderQueries.last, containsPair('limit', 20));
+    expect(find.text('Page 1 of 2'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'no-such-order');
+    await tester.pumpAndSettle();
+    expect(find.text('No matching results.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.byTooltip('Next page'));
+    await tester.pumpAndSettle();
+    expect(api.orderQueries.last, containsPair('page', 2));
+    expect(find.text('Page 2 of 2'), findsOneWidget);
+  });
+
+  testWidgets(
+      'order details show real API fields and confirm supported delivery transitions',
+      (tester) async {
+    final api = _FakeAdminApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Orders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Order 12345678'));
+    await tester.pumpAndSettle();
+
+    expect(api.getPaths, contains('/admin/orders/${_FakeAdminApi.orderId}'));
+    expect(find.text('Aqua Admin'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Test water'),
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('Test water'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('TESTTRACK001'),
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('TESTTRACK001'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Mark Assigned'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Mark Assigned'));
+    await tester.pumpAndSettle();
+    expect(find.text('Confirm delivery status change to Assigned?'),
+        findsOneWidget);
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(api.patchPaths, contains('/admin/deliveries/delivery-1/status'));
+    expect(api.patchData.last, containsPair('status', 'assigned'));
+    expect(find.text('Assigned'), findsWidgets);
+  });
+
+  testWidgets('order details use Arabic labels and right-to-left layout',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(ProviderScope(
+      child: MaterialApp(
+        locale: const Locale('ar'),
+        supportedLocales: const [Locale('ar')],
+        localizationsDelegates: const [
+          GlobalWidgetsLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: AdminOrderDetailsScreen(
+          api: _FakeAdminApi(),
+          orderId: _FakeAdminApi.orderId,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final title = find.text('تفاصيل الطلب');
+    expect(title, findsOneWidget);
+    expect(
+      Directionality.of(tester.element(title)),
+      TextDirection.rtl,
+    );
+  });
+
+  testWidgets('delivery list filters statuses and searches the loaded results',
+      (tester) async {
+    final api = _FakeAdminApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Deliveries'));
+    await tester.pumpAndSettle();
+
+    expect(api.getPaths, contains('/admin/deliveries'));
+    expect(find.text('Order 12345678'), findsOneWidget);
+
+    await tester.tap(find.byType(DropdownButton<String?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Assigned').last);
+    await tester.pumpAndSettle();
+    expect(find.text('No matching results.'), findsOneWidget);
+
+    await tester.tap(find.byType(DropdownButton<String?>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'no-such-delivery');
+    await tester.pumpAndSettle();
+    expect(find.text('No matching results.'), findsOneWidget);
   });
 
   testWidgets('products tab shows real API product data and empty states',
@@ -305,16 +430,96 @@ void main() {
 }
 
 class _FakeAdminApi implements AdminApi {
+  static const orderId = '12345678-0000-4000-8000-000000000001';
+
   bool validSession = true;
   bool loggedIn = false;
   int validationCalls = 0;
+  int ordersTotal = 1;
   Object? loginError;
   final getPaths = <String>[];
+  final orderQueries = <Map<String, dynamic>?>[];
   final postPaths = <String>[];
   final postData = <Object?>[];
   final patchPaths = <String>[];
   final patchData = <Object?>[];
   final failurePaths = <String>{};
+  final orders = <Map<String, dynamic>>[
+    {
+      'id': orderId,
+      'customerId': 'customer-12345678',
+      'status': 'placed',
+      'paymentMethod': 'cash',
+      'total': 17,
+      'currency': 'SAR',
+      'createdAt': '2026-10-28T12:00:00.000Z',
+    },
+  ];
+  final deliveries = <Map<String, dynamic>>[
+    {
+      'id': 'delivery-1',
+      'order_id': orderId,
+      'status': 'pending_dispatch',
+      'estimated_minutes': 45,
+    },
+  ];
+  final orderDetails = <String, dynamic>{
+    'id': orderId,
+    'status': 'paid',
+    'paymentStatus': 'succeeded',
+    'paymentMethod': 'card',
+    'deliveryOption': 'standard',
+    'customer': {
+      'id': 'customer-1',
+      'email': 'admin@example.test',
+      'firstName': 'Aqua',
+      'lastName': 'Admin',
+      'phone': '+966500000123',
+    },
+    'items': [
+      {
+        'productId': 'product-test',
+        'name': 'Test water',
+        'quantity': 2,
+        'unitPrice': 5,
+        'lineTotal': 10,
+      },
+    ],
+    'address': {'recipientName': 'Aqua Admin', 'city': 'Riyadh'},
+    'deliveryZone': {'city': 'Riyadh', 'name': 'Central'},
+    'summary': {
+      'subtotal': 10,
+      'discount': 0,
+      'deliveryFee': 5,
+      'serviceFee': 2,
+      'total': 17,
+      'currency': 'SAR',
+    },
+    'payments': [
+      {
+        'provider': 'test-provider',
+        'status': 'succeeded',
+        'amount': 17,
+        'currency': 'SAR',
+        'createdAt': '2026-10-28T12:00:00.000Z',
+      },
+    ],
+    'delivery': {
+      'id': 'delivery-1',
+      'status': 'pending_dispatch',
+      'estimatedMinutes': 45,
+      'trackingCode': 'TESTTRACK001',
+      'events': [
+        {
+          'status': 'pending_dispatch',
+          'note': 'Order is ready for dispatch',
+          'createdAt': '2026-10-28T12:00:00.000Z',
+        },
+      ],
+    },
+    'createdAt': '2026-10-28T12:00:00.000Z',
+    'updatedAt': '2026-10-28T12:00:00.000Z',
+  };
   List<Map<String, dynamic>> products = [
     {
       'id': 'product-1',
@@ -354,6 +559,16 @@ class _FakeAdminApi implements AdminApi {
   }) async {
     getPaths.add(path);
     if (failurePaths.contains(path)) throw StateError('Request failed');
+    if (path == '/admin/orders') {
+      orderQueries.add(query == null ? null : Map.of(query));
+      return {
+        'items': orders,
+        'total': ordersTotal,
+        'page': query?['page'] ?? 1,
+        'limit': query?['limit'] ?? 20,
+      };
+    }
+    if (path == '/admin/orders/$orderId') return orderDetails;
     switch (path) {
       case '/admin/dashboard':
         return {
@@ -364,18 +579,6 @@ class _FakeAdminApi implements AdminApi {
           'pendingDispatch': 1,
           'activeProducts': 8,
           'currency': 'SAR',
-        };
-      case '/admin/orders':
-        return {
-          'items': [
-            {
-              'id': 'order-12345678',
-              'status': 'placed',
-              'paymentMethod': 'cash',
-              'total': 20,
-              'currency': 'SAR',
-            }
-          ]
         };
       case '/admin/products':
         return {'items': products};
@@ -407,6 +610,8 @@ class _FakeAdminApi implements AdminApi {
             }
           ],
         };
+      case '/admin/deliveries':
+        return {'items': deliveries};
       case '/addresses/cities':
         return {
           'items': [
@@ -447,6 +652,16 @@ class _FakeAdminApi implements AdminApi {
   Future<Map<String, dynamic>> patch(String path, {Object? data}) async {
     patchPaths.add(path);
     patchData.add(data);
+    if (path == '/admin/deliveries/delivery-1/status' &&
+        data is Map<String, dynamic>) {
+      final delivery = orderDetails['delivery'] as Map<String, dynamic>;
+      delivery['status'] = data['status'];
+      (delivery['events'] as List<Map<String, dynamic>>).add({
+        'status': data['status'],
+        'note': data['note'],
+        'createdAt': '2026-10-28T12:01:00.000Z',
+      });
+    }
     return <String, dynamic>{};
   }
 

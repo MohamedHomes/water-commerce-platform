@@ -41,6 +41,11 @@ export class AdminController {
         return this.adminService.getOrders(query);
     }
 
+    @Get('orders/:id')
+    getOrderDetails(@Param('id', ParseUUIDPipe) id: string) {
+        return this.adminService.getOrderDetails(id);
+    }
+
     @Get('promotions')
     getPromotions() {
         return this.adminService.getPromotions();

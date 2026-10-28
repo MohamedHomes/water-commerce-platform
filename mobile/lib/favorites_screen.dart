@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
-import 'api_config.dart';
+import 'customer_api.dart';
 import 'customer_ui.dart';
 import 'localization.dart';
 
@@ -66,7 +66,7 @@ class FavoritesController extends StateNotifier<FavoritesState> {
   FavoritesController({
     Dio? dio,
     FlutterSecureStorage? storage,
-  })  : _dio = dio ?? Dio(BaseOptions(baseUrl: apiBaseUrl)),
+  })  : _dio = dio ?? CustomerApi.createDio(),
         _storage = storage ?? const FlutterSecureStorage(),
         super(const FavoritesState());
 

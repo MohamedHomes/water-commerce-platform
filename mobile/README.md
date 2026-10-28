@@ -18,10 +18,20 @@ backend provides those fields.
 
 Admin screens are connected to the existing APIs for dashboard metrics and
 orders, product management, category/brand management, inventory adjustments,
-promotions, delivery status operations, and review moderation. Cities and
-delivery zones are shown from the existing authenticated read-only endpoints.
-There is no Admin customer-list API or city/delivery-zone management API, so
-those records are not presented as editable features.
+promotions, delivery status operations, and review moderation. The mobile
+orders screen supports API status filtering and pagination, with search limited
+to the currently loaded page, matching Admin Web behavior. Order details use
+the authorized `GET /admin/orders/:id` endpoint to display customer and address
+snapshots, items, totals, payment records, and available delivery tracking
+information. Delivery status updates follow the backend's allowed transitions
+and require confirmation. Cities and delivery zones are shown from the existing
+authenticated read-only endpoints.
+
+The backend does not currently provide manual Admin order-status changes,
+order-status history, delivery-person assignment, or live map tracking. The
+mobile app does not simulate these capabilities. There is no Admin
+customer-list API or city/delivery-zone management API, so those records are
+not presented as editable features.
 
 Card orders remain payment pending when no real processor is configured; the
 app does not claim to process card payments. Live delivery tracking, production
@@ -39,18 +49,21 @@ flutter test
 ```
 
 Android emulators use `http://10.0.2.2:3000/api/v1` by default to reach a
-backend running on the Windows host. For a physical Android device, provide the
-host machine's LAN address and ensure the backend listens on the LAN interface
-and the device can reach it:
+backend running on the Windows host. For a USB-connected physical Android
+device, forward the backend port over ADB and use loopback:
 
 ```powershell
-flutter run --dart-define=AQUAFLOW_API_BASE_URL=http://192.168.1.20:3000/api/v1
+adb reverse tcp:3000 tcp:3000
+flutter run --dart-define=AQUAFLOW_API_BASE_URL=http://127.0.0.1:3000/api/v1
 ```
 
-Replace the example LAN address with the development host's actual reachable
-address. Do not use the example unchanged. The Android debug manifest permits
-cleartext HTTP for local development only. For production, configure the
-compile-time define with the deployed HTTPS API URL:
+Re-establish the reverse mapping if the device disconnects from ADB. For a
+device without USB debugging, configure the host machine's reachable LAN
+address instead. The Android debug manifest permits cleartext HTTP for local
+development only. The client refreshes expired access tokens using the stored
+refresh token; the backend defaults are a 15-minute access-token lifetime and
+a 7-day refresh-token lifetime. For production, configure the compile-time
+define with the deployed HTTPS API URL:
 
 ```powershell
 flutter build apk --release --dart-define=AQUAFLOW_API_BASE_URL=https://api.example.com/api/v1

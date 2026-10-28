@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import 'api_config.dart';
 import 'cart_screen.dart';
+import 'customer_api.dart';
+import 'favorites_screen.dart';
 import 'localization.dart';
 
 class CustomerProfileScreen extends ConsumerStatefulWidget {
@@ -17,7 +19,7 @@ class CustomerProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
-  final _dio = Dio(BaseOptions(baseUrl: apiBaseUrl));
+  final _dio = CustomerApi.createDio();
   final _storage = const FlutterSecureStorage();
   final _firstName = TextEditingController();
   final _lastName = TextEditingController();
@@ -115,10 +117,18 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
   }
 
   Future<void> _signOut() async {
-    await _storage.delete(key: 'auth_token');
-    await _storage.delete(key: 'refresh_token');
-    ref.invalidate(cartProvider);
-    if (mounted) context.go('/login');
+    try {
+      await CustomerSession.clearTokens();
+      ref.invalidate(cartProvider);
+      ref.invalidate(favoritesProvider);
+      if (mounted) context.go('/login');
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedError(context, error))),
+        );
+      }
+    }
   }
 
   @override
@@ -126,7 +136,14 @@ class _CustomerProfileScreenState extends ConsumerState<CustomerProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Profile')),
-        actions: const [LanguageSwitch(compact: true)],
+        actions: [
+          const LanguageSwitch(compact: true),
+          IconButton(
+            tooltip: localized(context, 'Sign out'),
+            onPressed: _signOut,
+            icon: const Icon(Icons.logout_rounded),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -270,7 +287,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _current = TextEditingController();
   final _next = TextEditingController();
   final _storage = const FlutterSecureStorage();
-  final _dio = Dio(BaseOptions(baseUrl: apiBaseUrl));
+  final _dio = CustomerApi.createDio();
   bool _showCurrent = false;
   bool _showNext = false;
   bool _loading = false;
