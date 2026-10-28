@@ -8,9 +8,9 @@ serve `index.html` for direct route requests and refreshes.
 | --- | --- |
 | `/` | Dashboard |
 | `/products` | Product management |
-| `/orders` | Orders and paginated order summaries |
+| `/orders` | Paginated order summaries with separate order and delivery statuses |
 | `/deliveries` | Delivery status operations |
-| `/inventory` | Stock and audited adjustments |
+| `/inventory` | Available stock, audited adjustments, and recorded movement history |
 | `/promotions` | Promotion creation and activation |
 | `/categories` | Category creation and editing |
 | `/brands` | Brand creation and editing |
@@ -22,11 +22,29 @@ authentication and protected `/admin/*` API endpoints are retained. The access
 token and account email are held in `sessionStorage` to keep authenticated
 navigation working across a page refresh; sign-out clears them.
 
-Known API limitations are represented rather than simulated: there is no
-dedicated Admin order-detail endpoint or payment-status field, so expandable
-order details contain only the summary fields returned by the existing
-paginated order-list API; the UI labels payment method separately and calls
-this limitation out. Delivery responses do not include customer information.
+Order status is driven by the payment/customer order lifecycle and is distinct
+from delivery status; there is no Admin order-status mutation. The order list
+shows the customer's name and ID separately, plus the persisted delivery status.
+Order details use the protected `GET /admin/orders/:id` endpoint. Payment status
+remains available in order details, not the paginated summary.
+
+The dashboard's **Paid order total** is the sum of `orders.total` for orders
+whose status is `paid`; that status is set by a successful payment webhook.
+This amount is after order discounts and includes delivery and service fees.
+Cash, pending, and cancelled orders are excluded. Refunds are not modeled, so
+this is an operational paid-order total, not a complete accounting revenue
+figure.
+
+Inventory quantity is the amount available to sell: order placement decrements
+it, and order cancellation releases it. The Admin movement-history endpoint
+shows the existing reservation, cancellation, and adjustment ledger records.
+The model does not record dispatch quantities or physical stocktakes, and
+reservations are not transitioned on delivery completion. Before implementing
+stocktake reconciliation, the business must define when a reservation becomes
+fulfilled/consumed, how failed or returned deliveries affect stock, and whether
+a physical count is compared with total physical stock or available-to-sell
+stock.
+
 Review moderation currently lists pending reviews only. Product image storage
 is not configured and delivery assignment/live driver tracking is unavailable.
 Product searches are limited to the existing endpoint response; the Admin API

@@ -350,7 +350,7 @@ class _AdminDashboardTabState extends State<AdminDashboardTab> {
                     metrics['awaitingPayment'],
                   ),
                   _MetricCard(
-                    localizedAdmin(context, 'Paid revenue'),
+                    localizedAdmin(context, 'Paid order total'),
                     '${metrics['currency'] ?? 'SAR'} ${metrics['paidRevenue'] ?? 0}',
                   ),
                   _MetricCard(
@@ -557,6 +557,7 @@ class AdminOperationsTab extends StatefulWidget {
 
 class _AdminOperationsTabState extends State<AdminOperationsTab> {
   String _section = 'Inventory';
+  final Set<String> _adjustingInventory = {};
 
   @override
   Widget build(BuildContext context) {
@@ -596,59 +597,106 @@ class _AdminOperationsTabState extends State<AdminOperationsTab> {
     if (_section == 'Inventory') {
       return AdminCollection(
         key: const ValueKey('admin-inventory'),
-        title: localizedAdmin(context, 'Inventory'),
+        title: localizedAdmin(context, 'Available stock'),
         load: () async => _items(await widget.api.get('/admin/inventory')),
-        itemBuilder: (context, item, reload) => Card(
-          child: ListTile(
-            title: Text(_displayName(context, item)),
-            subtitle: Text(
-              '${localizedAdmin(context, '{quantity} units', {
-                    'quantity': item['quantity'] ?? 0,
-                  })} · ${localizedStatus(context, _string(item['availability']))}',
-            ),
-            trailing: IconButton(
-              tooltip: localizedAdmin(context, 'Adjust stock'),
-              icon: const Icon(Icons.tune),
-              onPressed: () async {
-                final delta = await _askText(
-                  context,
-                  title: localizedAdmin(context, 'Adjust stock'),
-                  label: localizedAdmin(
-                    context,
-                    'Change in units (positive or negative)',
-                  ),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    signed: true,
-                  ),
-                );
-                if (!context.mounted || delta == null) return;
-                final value = int.tryParse(delta);
-                if (value == null || value == 0) {
-                  _showTextError(
-                    context,
-                    localizedAdmin(context, 'Enter a non-zero whole number.'),
-                  );
-                  return;
-                }
-                try {
-                  await widget.api.post(
-                    '/admin/inventory/${Uri.encodeComponent(_string(item['id']))}/adjustments',
-                    data: {'quantityDelta': value},
-                  );
-                  reload();
-                } catch (error) {
-                  if (context.mounted) _showError(context, widget.api, error);
-                }
-              },
+        headerBuilder: (context, _) => Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            localizedAdmin(
+              context,
+              'Available stock is reduced when orders are placed. Dispatch quantities and physical stocktakes are not recorded.',
             ),
           ),
         ),
+        itemBuilder: (context, item, reload) {
+          final productId = _string(item['id']);
+          final adjusting = _adjustingInventory.contains(productId);
+          return Card(
+            child: ListTile(
+              title: Text(_displayName(context, item)),
+              subtitle: Text(
+                '${localizedAdmin(context, '{quantity} units', {
+                      'quantity': item['quantity'] ?? 0,
+                    })} · ${localizedStatus(context, _string(item['availability']))}',
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: localizedAdmin(context, 'View stock movements'),
+                    icon: const Icon(Icons.history),
+                    onPressed: () => _showInventoryMovements(
+                      context,
+                      widget.api,
+                      productId,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: localizedAdmin(context, 'Adjust stock'),
+                    icon: adjusting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.tune),
+                    onPressed:
+                        adjusting ? null : () => _adjustInventory(item, reload),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
     }
     if (_section == 'Orders') {
       return _AdminOrdersView(api: widget.api);
     }
     return _AdminDeliveriesView(api: widget.api);
+  }
+
+  Future<void> _adjustInventory(
+    Map<String, dynamic> item,
+    VoidCallback reload,
+  ) async {
+    final productId = _string(item['id']);
+    if (_adjustingInventory.contains(productId)) return;
+    setState(() => _adjustingInventory.add(productId));
+    try {
+      final delta = await _askText(
+        context,
+        title: localizedAdmin(context, 'Adjust stock'),
+        label: localizedAdmin(
+          context,
+          'Change in units (positive or negative)',
+        ),
+        keyboardType: const TextInputType.numberWithOptions(signed: true),
+      );
+      if (!mounted || delta == null) return;
+      final value = int.tryParse(delta);
+      if (value == null || value == 0) {
+        _showTextError(
+          context,
+          localizedAdmin(context, 'Enter a non-zero whole number.'),
+        );
+        return;
+      }
+
+      await widget.api.post(
+        '/admin/inventory/${Uri.encodeComponent(productId)}/adjustments',
+        data: {'quantityDelta': value},
+      );
+      if (mounted) reload();
+      if (mounted) {
+        _showNotice(
+            context, localizedAdmin(context, 'Stock adjustment saved.'));
+      }
+    } catch (error) {
+      if (mounted) _showError(context, widget.api, error);
+    } finally {
+      if (mounted) setState(() => _adjustingInventory.remove(productId));
+    }
   }
 }
 
@@ -748,7 +796,9 @@ class _AdminOrdersViewState extends State<_AdminOrdersView> {
           final values = [
             order['id'],
             order['customerId'],
+            order['customerName'],
             order['status'],
+            order['deliveryStatus'],
             order['paymentMethod'],
           ];
           return values.any(
@@ -849,13 +899,24 @@ class _AdminOrdersViewState extends State<_AdminOrdersView> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${localizedStatus(context, _string(order['status']))} · '
-                                    '${localizedStatus(context, _string(order['paymentMethod']))}',
+                                    '${localizedAdmin(context, 'Order status')}: '
+                                    '${localizedStatus(context, _string(order['status']))}',
                                   ),
                                   Text(
-                                    localizedAdmin(context, 'Customer {id}', {
-                                      'id': _shortId(order['customerId']),
-                                    }),
+                                    '${localizedAdmin(context, 'Delivery status')}: '
+                                    '${order['deliveryStatus'] == null ? localizedAdmin(context, 'No delivery record') : localizedStatus(context, _string(order['deliveryStatus']))}',
+                                  ),
+                                  Text(
+                                    '${localizedAdmin(context, 'Customer')}: '
+                                    '${_string(order['customerName']).trim().isEmpty ? localizedAdmin(context, 'Customer name unavailable') : _string(order['customerName'])}',
+                                  ),
+                                  Text(
+                                    '${localizedAdmin(context, 'Customer ID')}: '
+                                    '${_shortId(order['customerId'])}',
+                                  ),
+                                  Text(
+                                    '${localizedAdmin(context, 'Payment method')}: '
+                                    '${localizedStatus(context, _string(order['paymentMethod']))}',
                                   ),
                                   if (createdAt != null)
                                     Text(
@@ -1114,12 +1175,17 @@ class AdminOrderDetailsScreen extends StatefulWidget {
 
 class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
   late Future<Map<String, dynamic>> _details;
+  Map<String, dynamic>? _loadedOrder;
+  String? _refreshError;
   bool _updatingDelivery = false;
 
   @override
   void initState() {
     super.initState();
-    _details = _load();
+    _details = _load().then((order) {
+      _loadedOrder = order;
+      return order;
+    });
   }
 
   Future<Map<String, dynamic>> _load() => widget.api.get(
@@ -1128,8 +1194,18 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
 
   Future<void> _refresh() async {
     final request = _load();
-    setState(() => _details = request);
-    await request;
+    setState(() {
+      _details = request;
+      _refreshError = null;
+    });
+    try {
+      final order = await request;
+      if (mounted) setState(() => _loadedOrder = order);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _refreshError = widget.api.errorMessage(error));
+      }
+    }
   }
 
   Future<void> _updateDelivery(
@@ -1162,17 +1238,53 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
 
     setState(() => _updatingDelivery = true);
     try {
-      await widget.api.patch(
+      final updated = await widget.api.patch(
         '/admin/deliveries/${Uri.encodeComponent(_string(delivery['id']))}/status',
         data: {
           'status': nextStatus,
           'note': localizedAdmin(context, 'Updated from AquaFlow Admin mobile'),
         },
       );
-      await _refresh();
-      await widget.onUpdated?.call();
+      final persistedStatus = _string(updated['status']);
+      if (persistedStatus.isEmpty) {
+        throw StateError(
+            'The server did not return the updated delivery status.');
+      }
+      final order = _loadedOrder;
+      if (order != null) {
+        final currentDelivery =
+            Map<String, dynamic>.from(_map(order['delivery']));
+        currentDelivery['status'] = persistedStatus;
+        setState(() {
+          _loadedOrder = {...order, 'delivery': currentDelivery};
+          _refreshError = null;
+        });
+      }
+      _showNotice(context, localizedAdmin(context, 'Delivery status updated.'));
     } catch (error) {
       if (mounted) _showError(context, widget.api, error);
+      if (mounted) setState(() => _updatingDelivery = false);
+      return;
+    }
+
+    try {
+      await _refresh();
+      await widget.onUpdated?.call();
+      if (mounted && _refreshError != null) {
+        _showNotice(
+          context,
+          '${localizedAdmin(context, 'Delivery status saved, but the latest data could not be refreshed.')} '
+          '$_refreshError',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _showNotice(
+          context,
+          '${localizedAdmin(context, 'Delivery status saved, but the latest data could not be refreshed.')} '
+          '${widget.api.errorMessage(error)}',
+        );
+      }
     } finally {
       if (mounted) setState(() => _updatingDelivery = false);
     }
@@ -1189,20 +1301,24 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
         future: _details,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
+            if (_loadedOrder == null) {
+              return const Center(child: CircularProgressIndicator());
+            }
           }
-          if (snapshot.hasError) {
+          final order = _loadedOrder ?? snapshot.data;
+          if (order == null && snapshot.hasError) {
             return _MessageState(
               message: localizedAdmin(
                 context,
                 widget.api.errorMessage(snapshot.error!),
               ),
               actionLabel: localizedAdmin(context, 'Retry'),
-              onAction: () => setState(() => _details = _load()),
+              onAction: () => _refresh(),
             );
           }
 
-          final order = snapshot.data!;
+          if (order == null)
+            return const Center(child: CircularProgressIndicator());
           final customer = _map(order['customer']);
           final summary = _map(order['summary']);
           final payments = _items({'items': order['payments']});
@@ -1214,6 +1330,17 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                if (_refreshError != null)
+                  Card(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        '${localizedAdmin(context, 'Refresh failed; saved changes remain applied.')} '
+                        '$_refreshError',
+                      ),
+                    ),
+                  ),
                 Text(
                   localizedAdmin(context, 'Order {id}', {
                     'id': _shortId(order['id']),
@@ -1226,10 +1353,10 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
                   runSpacing: 8,
                   children: [
                     Chip(
-                      label: Text(localizedStatus(
-                        context,
-                        _string(order['status']),
-                      )),
+                      label: Text(
+                        '${localizedAdmin(context, 'Order status')}: '
+                        '${localizedStatus(context, _string(order['status']))}',
+                      ),
                     ),
                     Chip(
                       label: Text(
@@ -1421,7 +1548,7 @@ class _AdminOrderDetailsScreenState extends State<AdminOrderDetailsScreen> {
       [
         _detailLine(
           context,
-          'Status',
+          'Delivery status',
           localizedStatus(context, status),
         ),
         _detailLine(
@@ -1862,6 +1989,7 @@ class _AdminCollectionState extends State<AdminCollection> {
   }
 
   void _reload() {
+    if (!mounted) return;
     setState(() {
       _itemsFuture = widget.load();
     });
@@ -2528,12 +2656,116 @@ String _shortId(Object? value) {
   return id.length > 8 ? id.substring(0, 8) : id;
 }
 
+Future<void> _showInventoryMovements(
+  BuildContext context,
+  AdminApi api,
+  String productId,
+) async {
+  final request = api.get(
+    '/admin/inventory/${Uri.encodeComponent(productId)}/movements',
+  );
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: Text(localizedAdmin(dialogContext, 'Stock movement history')),
+      content: SizedBox(
+        width: 420,
+        height: 360,
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: request,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return Center(
+                child: Text(
+                  localizedAdmin(context, 'Loading stock movements…'),
+                ),
+              );
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  localizedAdmin(
+                    context,
+                    api.errorMessage(snapshot.error!),
+                  ),
+                ),
+              );
+            }
+            final movements = _items(_map(snapshot.data));
+            if (movements.isEmpty) {
+              return Center(
+                child: Text(
+                  localizedAdmin(context, 'No stock movements recorded.'),
+                ),
+              );
+            }
+            return ListView.builder(
+              itemCount: movements.length,
+              itemBuilder: (context, index) {
+                final movement = movements[index];
+                final reason = switch (_string(movement['reason'])) {
+                  'order_reserved' => 'Reserved for an order',
+                  'order_cancelled' => 'Released after order cancellation',
+                  _ => 'Administrator adjustment',
+                };
+                final createdAt =
+                    DateTime.tryParse(_string(movement['createdAt']));
+                final delta = _integer(movement['quantityDelta']);
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    '${delta > 0 ? '+' : ''}$delta · '
+                    '${localizedAdmin(context, reason)}',
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (createdAt != null)
+                        Text(
+                          MaterialLocalizations.of(context)
+                              .formatMediumDate(createdAt.toLocal()),
+                        ),
+                      if (movement['orderId'] != null)
+                        Text(
+                          '${localizedAdmin(context, 'Order number')}: '
+                          '${_shortId(movement['orderId'])}',
+                        ),
+                      if (movement['adminId'] != null)
+                        Text(
+                          '${localizedAdmin(context, 'Administrator ID')}: '
+                          '${_shortId(movement['adminId'])}',
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: Text(localizedAdmin(dialogContext, 'Close')),
+        ),
+      ],
+    ),
+  );
+}
+
 void _showError(BuildContext context, AdminApi api, Object error) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(localizedAdmin(context, api.errorMessage(error))),
     ),
+  );
+}
+
+void _showNotice(BuildContext context, String message) {
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(message)),
   );
 }
 

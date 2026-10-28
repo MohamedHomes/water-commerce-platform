@@ -252,6 +252,9 @@ td input { min-width: 125px; margin: 3px 0; }
 td select { min-width: 130px; margin-top: 6px; }
 .empty-state { padding: 26px; color: var(--muted); text-align: center; }
 .detail-row td { padding: 17px; background: #f8fbfb; white-space: normal; }
+.secondary-text { display: block; margin-top: 3px; color: var(--muted); font-size: .72rem; }
+.inventory-history { display: grid; gap: 8px; margin: 0; padding-inline-start: 20px; }
+.inventory-history li small { display: block; color: var(--muted); }
 .order-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 12px 0 0; }
 .order-detail-grid dt { color: var(--muted); font-size: .75rem; }
 .order-detail-grid dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: .84rem; }

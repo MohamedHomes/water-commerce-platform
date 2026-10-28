@@ -134,6 +134,29 @@ describe('Admin order and delivery operations', () => {
         expect(response.body.deliveryZone.city).toBe('Test city');
     });
 
+    it('returns customer names and independent persisted order and delivery statuses', async () => {
+        const response = await request(app.getHttpServer())
+            .get('/api/v1/admin/orders')
+            .set('Authorization', `******
+            .expect(200);
+
+        expect(response.body.items).toContainEqual(
+            expect.objectContaining({
+                id: orderId,
+                customerId: expect.any(String),
+                customerName: 'Aqua Admin',
+                status: 'paid',
+                deliveryStatus: 'pending_dispatch',
+            }),
+        );
+
+        const dashboard = await request(app.getHttpServer())
+            .get('/api/v1/admin/dashboard')
+            .set('Authorization', `******
+            .expect(200);
+        expect(dashboard.body.paidRevenue).toBe(17);
+    });
+
     it('enforces delivery transitions and refreshes the delivery event history', async () => {
         await request(app.getHttpServer())
             .patch(`/api/v1/admin/deliveries/${deliveryId}/status`)
@@ -158,6 +181,18 @@ describe('Admin order and delivery operations', () => {
                 (event: { status: string }) => event.status,
             ),
         ).toEqual(['pending_dispatch', 'assigned']);
+
+        const orderList = await request(app.getHttpServer())
+            .get('/api/v1/admin/orders')
+            .set('Authorization', `******
+            .expect(200);
+        expect(orderList.body.items).toContainEqual(
+            expect.objectContaining({
+                id: orderId,
+                status: 'paid',
+                deliveryStatus: 'assigned',
+            }),
+        );
     });
 
     it('validates order identifiers and returns not-found for absent orders', async () => {

@@ -414,6 +414,18 @@ export class OrdersService {
             if (order.status !== 'placed' && order.status !== 'payment_pending') {
                 throw new ConflictException('Order can no longer be cancelled');
             }
+            const delivery = await client.query<{ status: string }>(
+                'SELECT status FROM deliveries WHERE order_id = $1 FOR UPDATE',
+                [orderId],
+            );
+            if (
+                delivery.rows[0] &&
+                delivery.rows[0].status !== 'pending_dispatch'
+            ) {
+                throw new ConflictException(
+                    'Order can no longer be cancelled after delivery dispatch has started',
+                );
+            }
             const activePayment = await client.query<{ id: string }>(
                 "SELECT id FROM payments WHERE order_id = $1 AND status = 'pending' LIMIT 1",
                 [orderId],

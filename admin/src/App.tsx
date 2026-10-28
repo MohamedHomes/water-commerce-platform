@@ -27,7 +27,9 @@ interface Dashboard {
 interface AdminOrder {
     id: string;
     customerId: string;
+    customerName: string | null;
     status: string;
+    deliveryStatus: string | null;
     paymentMethod: string;
     total: number;
     currency: string;
@@ -49,6 +51,15 @@ interface InventoryItem {
     quantity: number;
     availability: string;
     is_active: boolean;
+}
+
+interface InventoryMovement {
+    id: string;
+    orderId: string | null;
+    adminId: string | null;
+    quantityDelta: number;
+    reason: string;
+    createdAt: string;
 }
 
 interface DeliveryItem {
@@ -203,6 +214,10 @@ function App() {
     const [deliveryStatus, setDeliveryStatus] = useState('');
     const [promotions, setPromotions] = useState<Promotion[]>([]);
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
+    const [inventoryHistoryProductId, setInventoryHistoryProductId] = useState('');
+    const [inventoryMovements, setInventoryMovements] = useState<InventoryMovement[]>([]);
+    const [inventoryHistoryLoading, setInventoryHistoryLoading] = useState(false);
+    const [inventoryHistoryError, setInventoryHistoryError] = useState('');
     const [deliveries, setDeliveries] = useState<DeliveryItem[]>([]);
     const [reviews, setReviews] = useState<ProductReview[]>([]);
     const [products, setProducts] = useState<CatalogProduct[]>([]);
@@ -233,7 +248,7 @@ function App() {
     const safeOrdersPage = Math.min(ordersPage, orderPageCount);
     const searchTerm = search.trim().toLowerCase();
     const filteredOrders = orders.filter((order) =>
-        `${order.id} ${order.customerId} ${order.status} ${order.paymentMethod}`.toLowerCase().includes(searchTerm));
+        `${order.id} ${order.customerId} ${order.customerName ?? ''} ${order.status} ${order.deliveryStatus ?? ''} ${order.paymentMethod}`.toLowerCase().includes(searchTerm));
     const filteredProducts = products.filter((product) =>
         `${product.name} ${product.name_ar ?? ''} ${product.slug} ${product.category_name} ${product.brand_name}`.toLowerCase().includes(searchTerm)
         && (!productActivity || product.is_active === (productActivity === 'active'))
@@ -382,7 +397,11 @@ function App() {
         setSuccess('');
         try {
             await action();
-            if (await refreshPage(token)) setSuccess(t('savedSuccessfully'));
+            if (await refreshPage(token)) {
+                setSuccess(t('savedSuccessfully'));
+            } else {
+                setError(t('savedButRefreshFailed'));
+            }
             return true;
         } catch (requestError) {
             if (requestError instanceof ApiRequestError && requestError.status === 401) {
@@ -471,26 +490,64 @@ function App() {
             product: displayName(item.name, products.find((product) => product.id === item.id)?.name_ar),
         }))) return;
         await runMutation('inventoryUpdated', async () => {
-            await apiRequest(`/admin/inventory/${encodeURIComponent(item.id)}/adjustments`, token, {
+            const result = await apiRequest<{ productId: string; quantity: number; availability: string }>(
+                `/admin/inventory/${encodeURIComponent(item.id)}/adjustments`,
+                token,
+                {
                 method: 'POST',
                 body: JSON.stringify({ quantityDelta }),
             });
+            setInventory((current) => current.map((entry) => entry.id === result.productId
+                ? { ...entry, quantity: result.quantity, availability: result.availability }
+                : entry));
         });
     }
 
     async function updateDelivery(delivery: DeliveryItem, status: string) {
         if (!window.confirm(format('confirmDeliveryTransition', { status: translateStatus(language, status) }))) return;
         await runMutation('deliveryUpdated', async () => {
-            await apiRequest(`/admin/deliveries/${delivery.id}/status`, token, {
+            const result = await apiRequest<{ id: string; status: string }>(
+                `/admin/deliveries/${delivery.id}/status`,
+                token,
+                {
                 method: 'PATCH',
                 body: JSON.stringify({
                     status,
                     note: `Operations updated status to ${status}`,
                 }),
             });
+            setDeliveries((current) => current.map((entry) => entry.id === result.id
+                ? { ...entry, status: result.status }
+                : entry));
         });
     }
 
+    async function loadInventoryHistory(productId: string) {
+        setInventoryHistoryProductId(productId);
+        setInventoryMovements([]);
+        setInventoryHistoryError('');
+        setInventoryHistoryLoading(true);
+        try {
+            const result = await apiRequest<{ items: InventoryMovement[] }>(
+                `/admin/inventory/${encodeURIComponent(productId)}/movements`,
+                token,
+            );
+            setInventoryMovements(result.items);
+        } catch (requestError) {
+            setInventoryHistoryError(errorMessage(requestError, 'requestFailed'));
+        } finally {
+            setInventoryHistoryLoading(false);
+        }
+    }
+
+    async function toggleInventoryHistory(productId: string) {
+        if (inventoryHistoryProductId === productId) {
+            setInventoryHistoryProductId('');
+            setInventoryHistoryError('');
+            return;
+        }
+        await loadInventoryHistory(productId);
+    }
     async function moderateReview(review: ProductReview, status: 'approved' | 'rejected') {
         if (status === 'rejected' && !window.confirm(t('confirmRejectReview'))) return;
         await runMutation('moderationFailed', async () => {
@@ -718,7 +775,7 @@ function App() {
             {pathname === '/orders' && (
                 <section className="card panel">
                     <div className="section-heading">
-                        <div><h2>{t('orders')}</h2><p>{ordersTotal} {t('results')}</p><p className="api-limitation">{t('paymentStatusUnavailable')}</p></div>
+                        <div><h2>{t('orders')}</h2><p>{ordersTotal} {t('results')}</p><p className="api-limitation">{t('statusLifecyclesDescription')}</p><p className="api-limitation">{t('paymentStatusUnavailable')}</p></div>
                         <div className="toolbar">
                             <label>{t('filterByStatus')}
                                 <select value={orderStatus} onChange={(event) => {
@@ -736,24 +793,29 @@ function App() {
                     </div>
                     <div className="table-wrap">
                         <table>
-                            <thead><tr><th>{t('order')}</th><th>{t('customerId')}</th><th>{t('status')}</th><th>{t('paymentMethod')}</th><th>{t('total')}</th><th>{t('created')}</th><th>{t('action')}</th></tr></thead>
+                            <thead><tr><th>{t('order')}</th><th>{t('customer')}</th><th>{t('orderStatus')}</th><th>{t('deliveryStatus')}</th><th>{t('paymentMethod')}</th><th>{t('total')}</th><th>{t('created')}</th><th>{t('action')}</th></tr></thead>
                             <tbody>
                                 {filteredOrders.map((order) => (
                                     <Fragment key={order.id}>
                                         <tr>
                                             <td title={order.id}>{order.id.slice(0, 8)}</td>
-                                            <td title={order.customerId}>{order.customerId.slice(0, 8)}</td>
+                                            <td title={order.customerId}>
+                                                {order.customerName || t('customerNameUnavailable')}
+                                                <small className="secondary-text">{order.customerId.slice(0, 8)}</small>
+                                            </td>
                                             <td><span className={`status-pill status-${order.status}`}>{translateStatus(language, order.status)}</span></td>
+                                            <td>{order.deliveryStatus ? translateStatus(language, order.deliveryStatus) : t('noDeliveryRecord')}</td>
                                             <td>{translateStatus(language, order.paymentMethod)}</td>
                                             <td>{order.currency} {order.total.toFixed(2)}</td>
                                             <td>{new Date(order.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-SA')}</td>
                                             <td><button className="button button-quiet" onClick={() => setExpandedOrder(expandedOrder === order.id ? '' : order.id)}>{expandedOrder === order.id ? t('hideDetails') : t('viewDetails')}</button></td>
                                         </tr>
                                         {expandedOrder === order.id && (
-                                            <tr className="detail-row"><td colSpan={7}>
+                                            <tr className="detail-row"><td colSpan={8}>
                                                 <strong>{t('orderDetails')}</strong>
                                                 <dl className="order-detail-grid">
                                                     <div><dt>{t('orderId')}</dt><dd>{order.id}</dd></div>
+                                                    <div><dt>{t('customer')}</dt><dd>{order.customerName || t('customerNameUnavailable')}</dd></div>
                                                     <div><dt>{t('customerId')}</dt><dd>{order.customerId}</dd></div>
                                                     <div><dt>{t('status')}</dt><dd>{translateStatus(language, order.status)}</dd></div>
                                                     <div><dt>{t('payment')}</dt><dd>{translateStatus(language, order.paymentMethod)}</dd></div>
@@ -762,8 +824,8 @@ function App() {
                                         )}
                                     </Fragment>
                                 ))}
-                                {orders.length > 0 && filteredOrders.length === 0 && <tr><td colSpan={7} className="empty-state">{t('noMatchingResults')}</td></tr>}
-                                {orders.length === 0 && !loading && <tr><td colSpan={7} className="empty-state">{t('noOrders')}</td></tr>}
+                                {orders.length > 0 && filteredOrders.length === 0 && <tr><td colSpan={8} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                {orders.length === 0 && !loading && <tr><td colSpan={8} className="empty-state">{t('noOrders')}</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -817,6 +879,7 @@ function App() {
                     <section className="card panel">
                         <h2>{t('inventory')}</h2>
                         <p>{t('inventoryDescription')}</p>
+                        <p className="api-limitation">{t('stockAvailabilityExplanation')}</p>
                         <div className="toolbar">
                             <label>{t('filterByStatus')}<select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)}>
                                 <option value="">{t('allStatuses')}</option>
@@ -826,23 +889,50 @@ function App() {
                         </div>
                         <div className="table-wrap">
                             <table>
-                                <thead><tr><th>{t('product')}</th><th>{t('stock')}</th><th>{t('availability')}</th><th>{t('adjustment')}</th></tr></thead>
+                                <thead><tr><th>{t('product')}</th><th>{t('availableStock')}</th><th>{t('availability')}</th><th>{t('adjustment')}</th><th>{t('history')}</th></tr></thead>
                                 <tbody>{filteredInventory.map((item) => (
-                                    <tr key={item.id}>
-                                        <td>{displayName(
-                                            products.find((product) => product.id === item.id)?.name ?? item.name,
-                                            products.find((product) => product.id === item.id)?.name_ar,
-                                        )}</td>
-                                        <td>{item.quantity}</td>
-                                        <td><span className={`status-pill status-${item.availability}`}>{translateStatus(language, item.availability)}</span></td>
-                                        <td>
-                                            <button className="secondary" aria-label={format('removeOne', { product: item.name })} disabled={loading || item.quantity <= 0} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
-                                            <button aria-label={format('addOne', { product: item.name })} onClick={() => void adjustInventory(item, 1)}>+</button>
-                                        </td>
-                                    </tr>
+                                    <Fragment key={item.id}>
+                                        <tr>
+                                            <td>{displayName(
+                                                products.find((product) => product.id === item.id)?.name ?? item.name,
+                                                products.find((product) => product.id === item.id)?.name_ar,
+                                            )}</td>
+                                            <td>{item.quantity}</td>
+                                            <td><span className={`status-pill status-${item.availability}`}>{translateStatus(language, item.availability)}</span></td>
+                                            <td>
+                                                <button className="secondary" aria-label={format('removeOne', { product: item.name })} disabled={loading || item.quantity <= 0} onClick={() => void adjustInventory(item, -1)}>−</button>{' '}
+                                                <button disabled={loading} aria-label={format('addOne', { product: item.name })} onClick={() => void adjustInventory(item, 1)}>+</button>
+                                            </td>
+                                            <td><button className="button button-quiet" disabled={inventoryHistoryLoading} onClick={() => void toggleInventoryHistory(item.id)}>{inventoryHistoryProductId === item.id ? t('hideHistory') : t('viewHistory')}</button></td>
+                                        </tr>
+                                        {inventoryHistoryProductId === item.id && (
+                                            <tr className="detail-row">
+                                                <td colSpan={5}>
+                                                    {inventoryHistoryLoading ? <p>{t('loadingHistory')}</p>
+                                                        : inventoryHistoryError ? <><p className="error-banner" role="alert">{inventoryHistoryError}</p><button className="button button-quiet" onClick={() => void loadInventoryHistory(item.id)}>{t('retry')}</button></>
+                                                            : inventoryMovements.length === 0 ? <p>{t('noInventoryMovements')}</p>
+                                                                : <ul className="inventory-history">
+                                                                    {inventoryMovements.map((movement) => (
+                                                                        <li key={movement.id}>
+                                                                            <strong>{movement.quantityDelta > 0 ? '+' : ''}{movement.quantityDelta}</strong>
+                                                                            {' · '}{t(movement.reason === 'order_reserved'
+                                                                                ? 'movementOrderReserved'
+                                                                                : movement.reason === 'order_cancelled'
+                                                                                    ? 'movementOrderCancelled'
+                                                                                    : 'movementAdminAdjustment')}
+                                                                            {' · '}{new Date(movement.createdAt).toLocaleString(language === 'ar' ? 'ar-SA' : 'en-SA')}
+                                                                            {movement.orderId && <small>{t('order')} {movement.orderId.slice(0, 8)}</small>}
+                                                                            {movement.adminId && <small>{t('adminId')}: {movement.adminId.slice(0, 8)}</small>}
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>}
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </Fragment>
                                 ))}
-                                {inventory.length === 0 && !loading && <tr><td colSpan={4} className="empty-state">{t('noInventory')}</td></tr>}
-                                {inventory.length > 0 && filteredInventory.length === 0 && <tr><td colSpan={4} className="empty-state">{t('noMatchingResults')}</td></tr>}
+                                {inventory.length === 0 && !loading && <tr><td colSpan={5} className="empty-state">{t('noInventory')}</td></tr>}
+                                {inventory.length > 0 && filteredInventory.length === 0 && <tr><td colSpan={5} className="empty-state">{t('noMatchingResults')}</td></tr>}
                                 </tbody>
                             </table>
                         </div>

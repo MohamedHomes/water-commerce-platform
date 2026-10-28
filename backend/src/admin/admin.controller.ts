@@ -56,6 +56,11 @@ export class AdminController {
         return this.adminService.getInventory();
     }
 
+    @Get('inventory/:productId/movements')
+    getInventoryMovements(@Param('productId') productId: string) {
+        return this.adminService.getInventoryMovements(productId);
+    }
+
     @Post('inventory/:productId/adjustments')
     adjustInventory(
         @CurrentUser() user: { id: string },

@@ -154,6 +154,10 @@ void main() {
     expect(api.getPaths, contains('/admin/orders'));
     expect(api.orderQueries.last, containsPair('limit', 20));
     expect(find.text('Page 1 of 2'), findsOneWidget);
+    expect(find.textContaining('Regular Customer'), findsOneWidget);
+    expect(find.textContaining('Order status: Placed'), findsOneWidget);
+    expect(find.textContaining('Delivery status: Pending dispatch'),
+        findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'no-such-order');
     await tester.pumpAndSettle();
@@ -205,6 +209,31 @@ void main() {
     expect(api.patchPaths, contains('/admin/deliveries/delivery-1/status'));
     expect(api.patchData.last, containsPair('status', 'assigned'));
     expect(find.text('Assigned'), findsWidgets);
+  });
+
+  testWidgets(
+      'a saved delivery update is not reported as failed on refresh error',
+      (tester) async {
+    final api = _FakeAdminApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Orders'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Order 12345678'));
+    await tester.pumpAndSettle();
+    api.failurePaths.add('/admin/orders/${_FakeAdminApi.orderId}');
+
+    await tester.ensureVisible(find.text('Mark Assigned'));
+    await tester.tap(find.text('Mark Assigned'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(api.patchPaths, contains('/admin/deliveries/delivery-1/status'));
+    expect(find.textContaining('Refresh failed; saved changes remain applied.'),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('order details use Arabic labels and right-to-left layout',
@@ -391,6 +420,44 @@ void main() {
     expect(api.getPaths, contains('/admin/inventory'));
   });
 
+  testWidgets('inventory history displays persisted movement details',
+      (tester) async {
+    final api = _FakeAdminApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Operations'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('View stock movements'));
+    await tester.pumpAndSettle();
+
+    expect(
+      api.getPaths,
+      contains('/admin/inventory/product-1/movements'),
+    );
+    expect(find.textContaining('Administrator adjustment'), findsOneWidget);
+    expect(find.textContaining('admin-1'), findsOneWidget);
+  });
+
+  testWidgets('inventory adjustment errors stay in the Admin screen',
+      (tester) async {
+    final api = _FakeAdminApi()..postError = StateError('Request failed');
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: AdminOperationsTab(api: api)),
+    ));
+    await tester.tap(find.text('Operations'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Adjust stock'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '-2');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Request failed'), findsOneWidget);
+    expect(find.text('Mineral water'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('catalog screen loads categories and brands from Admin API',
       (tester) async {
     final api = _FakeAdminApi();
@@ -437,6 +504,7 @@ class _FakeAdminApi implements AdminApi {
   int validationCalls = 0;
   int ordersTotal = 1;
   Object? loginError;
+  Object? postError;
   final getPaths = <String>[];
   final orderQueries = <Map<String, dynamic>?>[];
   final postPaths = <String>[];
@@ -448,7 +516,9 @@ class _FakeAdminApi implements AdminApi {
     {
       'id': orderId,
       'customerId': 'customer-12345678',
+      'customerName': 'Regular Customer',
       'status': 'placed',
+      'deliveryStatus': 'pending_dispatch',
       'paymentMethod': 'cash',
       'total': 17,
       'currency': 'SAR',
@@ -593,6 +663,19 @@ class _FakeAdminApi implements AdminApi {
             }
           ]
         };
+      case '/admin/inventory/product-1/movements':
+        return {
+          'items': [
+            {
+              'id': 'movement-1',
+              'orderId': null,
+              'adminId': 'admin-12345678',
+              'quantityDelta': 3,
+              'reason': 'inventory_adjustment',
+              'createdAt': '2026-10-28T12:00:00.000Z',
+            }
+          ],
+        };
       case '/admin/catalog-terms':
         return {
           'categories': [
@@ -645,6 +728,7 @@ class _FakeAdminApi implements AdminApi {
   Future<Map<String, dynamic>> post(String path, {Object? data}) async {
     postPaths.add(path);
     postData.add(data);
+    if (postError != null) throw postError!;
     return <String, dynamic>{};
   }
 
@@ -661,6 +745,7 @@ class _FakeAdminApi implements AdminApi {
         'note': data['note'],
         'createdAt': '2026-10-28T12:01:00.000Z',
       });
+      return {'id': 'delivery-1', 'status': data['status']};
     }
     return <String, dynamic>{};
   }

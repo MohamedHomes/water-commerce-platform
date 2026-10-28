@@ -147,6 +147,18 @@ describe('Admin operations', () => {
             ['prod-1'],
         );
         expect(adjustedStock.rows[0].quantity).toBe(originalStock.rows[0].quantity + 3);
+        const movements = await request(app.getHttpServer())
+            .get('/api/v1/admin/inventory/prod-1/movements')
+            .set('Authorization', `******
+            .expect(200);
+        expect(movements.body.items).toContainEqual(
+            expect.objectContaining({
+                orderId: null,
+                adminId: account.id,
+                quantityDelta: 3,
+                reason: 'inventory_adjustment',
+            }),
+        );
         await request(app.getHttpServer())
             .post('/api/v1/admin/inventory/prod-1/adjustments')
             .set('Authorization', `Bearer ${adminToken}`)

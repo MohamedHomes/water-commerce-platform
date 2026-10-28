@@ -751,6 +751,14 @@ final GoRouter appRouter = GoRouter(
       builder: (_, __) => const CheckoutScreen(),
     ),
     GoRoute(
+      path: '/order-confirmation',
+      builder: (_, state) {
+        final order = state.extra;
+        if (order is! OrderRecord) return const OrdersScreen();
+        return OrderConfirmationScreen(order: order);
+      },
+    ),
+    GoRoute(
       path: '/orders',
       builder: (_, __) => const OrdersScreen(),
     ),
@@ -1839,6 +1847,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Future<void> placeOrder() async {
+    if (loading) return;
     final checkoutId = summary?.checkoutId;
     if (checkoutId == null || checkoutId.isEmpty) {
       setState(() {
@@ -1852,8 +1861,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       error = null;
     });
     try {
-      await ApiClient.placeOrder(checkoutId);
-      if (mounted) context.go('/orders');
+      final order = await ApiClient.placeOrder(checkoutId);
+      if (mounted) {
+        context.go('/order-confirmation', extra: order);
+      }
     } catch (exception) {
       if (mounted) {
         setState(() {
@@ -2095,6 +2106,85 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
     );
   }
+}
+
+class OrderConfirmationScreen extends StatelessWidget {
+  const OrderConfirmationScreen({required this.order, super.key});
+
+  final OrderRecord order;
+
+  @override
+  Widget build(BuildContext context) => PopScope<void>(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) context.go('/orders');
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            title: Text(localized(context, 'Order received')),
+            actions: const [LanguageSwitch(compact: true)],
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              const Icon(
+                Icons.check_circle_outline_rounded,
+                size: 72,
+                color: Color(0xFF0E9F6E),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                localized(context, 'Your order was received.'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 24),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        '${localized(context, 'Order number')}: ${order.id}',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${localized(context, 'Order status')}: '
+                        '${localizedStatus(context, order.status)}',
+                      ),
+                      if (order.deliveryStatus != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '${localized(context, 'Delivery status')}: '
+                          '${localizedStatus(context, order.deliveryStatus!)}',
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        '${localized(context, 'Order total')}: '
+                        '${order.currency} ${order.total.toStringAsFixed(2)}',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => context.go('/orders'),
+                child: Text(localized(context, 'View my orders')),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => context.go('/'),
+                child: Text(localized(context, 'Go to home')),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 class OrdersScreen extends StatefulWidget {
@@ -2346,7 +2436,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(localized(context, 'Orders')),
-        actions: const [LanguageSwitch(compact: true)],
+        actions: [
+          IconButton(
+            tooltip: localized(context, 'Go to home'),
+            onPressed: () => context.go('/'),
+            icon: const Icon(Icons.home_outlined),
+          ),
+          const LanguageSwitch(compact: true),
+        ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())

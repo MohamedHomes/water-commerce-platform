@@ -5,6 +5,9 @@ cart review, server-priced checkout drafts, customer order history/actions,
 delivery status, in-app notifications, payment-intent groundwork, and verified
 purchase reviews. API requests use the configured backend URL and store
 access/refresh tokens with platform secure storage.
+Successful checkout opens an order confirmation screen with direct links to
+order history and home; Android system back returns to order history rather
+than reopening the completed checkout.
 
 The same Flutter application also includes a separate Admin experience at
 **Administrator sign in** on the customer sign-in page, or directly at
@@ -27,11 +30,29 @@ information. Delivery status updates follow the backend's allowed transitions
 and require confirmation. Cities and delivery zones are shown from the existing
 authenticated read-only endpoints.
 
-The backend does not currently provide manual Admin order-status changes,
+The order list displays the customer's name separately from the customer ID
+and shows order status separately from delivery status. Order status follows
+the payment/customer lifecycle; delivery updates do not change the order
+status. The backend does not provide manual Admin order-status changes,
 order-status history, delivery-person assignment, or live map tracking. The
-mobile app does not simulate these capabilities. There is no Admin
-customer-list API or city/delivery-zone management API, so those records are
-not presented as editable features.
+mobile app does not simulate these capabilities.
+
+Inventory quantity is the amount available to sell: order placement decrements
+it, and order cancellation releases it. Admin Mobile can review the existing
+reservation, cancellation, and adjustment movement ledger. The model does not
+record dispatched quantities or physical stocktakes, and reservations are not
+transitioned when a delivery completes. A physical count/variance workflow
+requires explicit rules for when reservations become fulfilled, how failed or
+returned deliveries affect stock, and whether counts reconcile total physical
+stock or available-to-sell stock. There is no Admin customer-list API or
+city/delivery-zone management API, so those records are not presented as
+editable features.
+
+The dashboard's **Paid order total** sums `orders.total` for orders marked
+`paid` after successful payment confirmation. It is after discounts and
+includes delivery and service fees; cash, pending, and cancelled orders are
+excluded. Refunds are not modeled, so this is not a complete accounting
+revenue figure.
 
 Card orders remain payment pending when no real processor is configured; the
 app does not claim to process card payments. Live delivery tracking, production

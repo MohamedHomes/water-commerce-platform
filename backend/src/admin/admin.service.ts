@@ -304,7 +304,10 @@ export class AdminOrdersQuery {
 interface AdminOrderRow extends QueryResultRow {
     id: string;
     customer_id: string;
+    customer_first_name: string;
+    customer_last_name: string;
     status: string;
+    delivery_status: string | null;
     payment_method: string;
     total: string | number;
     currency: string;
@@ -386,9 +389,14 @@ export class AdminService {
         values.push(limit, offset);
         const result = await this.database.query<AdminOrderRow>(
             `
-                SELECT id, customer_id, status, payment_method, total, currency, created_at
-                FROM orders ${statusCondition}
-                ORDER BY created_at DESC, id DESC
+                SELECT o.id, o.customer_id, c.first_name AS customer_first_name,
+                    c.last_name AS customer_last_name, o.status, d.status AS delivery_status,
+                    o.payment_method, o.total, o.currency, o.created_at
+                FROM orders o
+                JOIN customers c ON c.id = o.customer_id
+                LEFT JOIN deliveries d ON d.order_id = o.id
+                ${query.status ? `WHERE o.status = $1` : ''}
+                ORDER BY o.created_at DESC, o.id DESC
                 LIMIT $${values.length - 1} OFFSET $${values.length}
             `,
             values,
@@ -397,7 +405,9 @@ export class AdminService {
             items: result.rows.map((row) => ({
                 id: row.id,
                 customerId: row.customer_id,
+                customerName: `${row.customer_first_name} ${row.customer_last_name}`.trim() || null,
                 status: row.status,
+                deliveryStatus: row.delivery_status,
                 paymentMethod: row.payment_method,
                 total: Number(row.total),
                 currency: row.currency,
@@ -590,6 +600,44 @@ export class AdminService {
         return { items: result.rows };
     }
 
+    async getInventoryMovements(productId: string) {
+        const product = await this.database.query<{ id: string }>(
+            'SELECT id FROM products WHERE id = $1',
+            [productId],
+        );
+        if (!product.rows[0]) {
+            throw new NotFoundException('Product not found');
+        }
+
+        const result = await this.database.query<{
+            id: string;
+            order_id: string | null;
+            admin_customer_id: string | null;
+            quantity_delta: number;
+            reason: string;
+            created_at: Date | string;
+        }>(
+            `
+                SELECT id, order_id, admin_customer_id, quantity_delta, reason, created_at
+                FROM inventory_movements
+                WHERE product_id = $1
+                ORDER BY created_at DESC, id DESC
+                LIMIT 100
+            `,
+            [productId],
+        );
+        return {
+            items: result.rows.map((movement) => ({
+                id: movement.id,
+                orderId: movement.order_id,
+                adminId: movement.admin_customer_id,
+                quantityDelta: movement.quantity_delta,
+                reason: movement.reason,
+                createdAt: new Date(movement.created_at).toISOString(),
+            })),
+        };
+    }
+
     async getCatalogTerms() {
         const [categories, brands] = await Promise.all([
             this.database.query(
@@ -697,7 +745,10 @@ export class AdminService {
             if (quantity < 0) {
                 throw new BadRequestException('Inventory cannot be reduced below zero');
             }
-            await client.query(
+            const updated = await client.query<{
+                quantity: number;
+                availability: string;
+            }>(
                 `
                     UPDATE products
                     SET quantity = $2,
@@ -708,9 +759,11 @@ export class AdminService {
                         END,
                         updated_at = NOW()
                     WHERE id = $1
+                    RETURNING quantity, availability
                 `,
                 [productId, quantity],
             );
+            const persisted = updated.rows[0];
             await client.query(
                 `
                     INSERT INTO inventory_movements (
@@ -725,9 +778,18 @@ export class AdminService {
                         admin_customer_id, action, resource_type, resource_id, metadata
                     ) VALUES ($1, 'inventory_adjusted', 'product', NULL, $2::jsonb)
                 `,
-                [adminId, JSON.stringify({ productId, quantityDelta: dto.quantityDelta, quantity })],
+                [adminId, JSON.stringify({
+                    productId,
+                    quantityDelta: dto.quantityDelta,
+                    quantity: persisted.quantity,
+                    availability: persisted.availability,
+                })],
             );
-            return { productId, quantity, availability: quantity === 0 ? 'out_of_stock' : 'in_stock' };
+            return {
+                productId,
+                quantity: persisted.quantity,
+                availability: persisted.availability,
+            };
         });
     }
 

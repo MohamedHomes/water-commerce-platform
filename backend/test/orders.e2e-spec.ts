@@ -300,6 +300,48 @@ describe('Orders', () => {
             ]);
     });
 
+    it('does not release reserved stock when cancellation is attempted after dispatch starts', async () => {
+        const database = app.get(DatabaseService);
+        const before = await database.query<{ quantity: number }>(
+            'SELECT quantity FROM products WHERE id = $1',
+            ['prod-1'],
+        );
+        const customer = await registerCustomer('orders-after-dispatch@example.com');
+        const prepared = await prepareCheckout(customer.token, 'cash');
+        const created = await request(app.getHttpServer())
+            .post('/api/v1/orders')
+            .set('Authorization', `******
+            .send({ checkoutId: prepared.checkoutId })
+            .expect(201);
+
+        await database.query(
+            "UPDATE deliveries SET status = 'assigned' WHERE order_id = $1",
+            [created.body.id],
+        );
+        await request(app.getHttpServer())
+            .post(`/api/v1/orders/${created.body.id}/cancel`)
+            .set('Authorization', `******
+            .expect(409);
+
+        const [inventory, order, reservation] = await Promise.all([
+            database.query<{ quantity: number }>(
+                'SELECT quantity FROM products WHERE id = $1',
+                ['prod-1'],
+            ),
+            database.query<{ status: string }>(
+                'SELECT status FROM orders WHERE id = $1',
+                [created.body.id],
+            ),
+            database.query<{ status: string }>(
+                'SELECT status FROM inventory_reservations WHERE order_id = $1 AND product_id = $2',
+                [created.body.id, 'prod-1'],
+            ),
+        ]);
+        expect(inventory.rows[0].quantity).toBe(before.rows[0].quantity - 2);
+        expect(order.rows[0].status).toBe('placed');
+        expect(reservation.rows[0].status).toBe('reserved');
+    });
+
     it('applies a server-calculated promotion once and enforces redemption limits', async () => {
         const database = app.get(DatabaseService);
         await database.query(
