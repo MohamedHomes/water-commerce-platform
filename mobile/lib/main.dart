@@ -183,6 +183,20 @@ class OrderRecord {
   final String currency;
   final DateTime createdAt;
 
+  OrderRecord copyWith({String? paymentStatus}) => OrderRecord(
+        id: id,
+        status: status,
+        paymentMethod: paymentMethod,
+        paymentStatus: paymentStatus ?? this.paymentStatus,
+        deliveryStatus: deliveryStatus,
+        deliveryOption: deliveryOption,
+        address: address,
+        items: items,
+        total: total,
+        currency: currency,
+        createdAt: createdAt,
+      );
+
   factory OrderRecord.fromJson(Map<String, dynamic> json) {
     final addressJson = json['address'] as Map<String, dynamic>? ?? {};
     final summary = json['summary'] as Map<String, dynamic>? ?? {};
@@ -466,12 +480,13 @@ class ApiClient {
         .toList();
   }
 
-  static Future<void> cancelOrder(String orderId) async {
+  static Future<OrderRecord> cancelOrder(String orderId) async {
     final token = await readToken();
-    await dio.post(
+    final response = await dio.post(
       '/orders/$orderId/cancel',
       options: Options(headers: {'Authorization': 'Bearer $token'}),
     );
+    return OrderRecord.fromJson(response.data as Map<String, dynamic>);
   }
 
   static Future<void> reorder(String orderId) async {
@@ -1868,6 +1883,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     } catch (exception) {
       if (mounted) {
         setState(() {
+          if (exception is DioException &&
+              exception.response?.statusCode == 409) {
+            summary = null;
+          }
           loading = false;
           error = localizedError(context, exception);
         });
@@ -2197,6 +2216,7 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> {
   List<OrderRecord> orders = [];
   final Set<String> _startingPayments = {};
+  final Set<String> _activeOrderActions = {};
   bool loading = true;
   String? error;
 
@@ -2225,46 +2245,90 @@ class _OrdersScreenState extends State<OrdersScreen> {
           loading = false;
           error = exception.toString();
         });
+        _logOrderActionFailure(exception);
       }
     }
   }
 
   Future<void> _cancelOrder(OrderRecord order) async {
+    if (_activeOrderActions.contains(order.id)) return;
+    setState(() => _activeOrderActions.add(order.id));
     try {
-      await ApiClient.cancelOrder(order.id);
-      await _loadOrders();
-    } catch (exception) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizedError(context, exception))),
+      final cancelledOrder = await ApiClient.cancelOrder(order.id);
+      if (!mounted) return;
+      setState(() {
+        orders = orders
+            .map((current) =>
+                current.id == cancelledOrder.id ? cancelledOrder : current)
+            .toList();
+      });
+      final refreshed = await _refreshOrdersAfterMutation();
+      if (!refreshed && mounted) {
+        _showOrderActionMessage(
+          localized(
+            context,
+            'Order cancelled, but the latest order list could not be refreshed.',
+          ),
         );
       }
+    } catch (exception) {
+      if (mounted) {
+        if (exception is DioException && exception.response?.statusCode == 409) {
+          await _refreshOrdersAfterMutation();
+        }
+        if (!mounted) return;
+        _logOrderActionFailure(exception);
+        _showOrderActionMessage(
+          localizedError(context, exception),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _activeOrderActions.remove(order.id));
     }
   }
 
   Future<void> _reorder(OrderRecord order) async {
+    if (_activeOrderActions.contains(order.id)) return;
+    setState(() => _activeOrderActions.add(order.id));
     try {
       await ApiClient.reorder(order.id);
       if (mounted) context.go('/cart');
     } catch (exception) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(localizedError(context, exception))),
+        if (exception is DioException && exception.response?.statusCode == 409) {
+          await _refreshOrdersAfterMutation();
+        }
+        if (!mounted) return;
+        _logOrderActionFailure(exception);
+        _showOrderActionMessage(
+          localizedError(context, exception),
         );
       }
+    } finally {
+      if (mounted) setState(() => _activeOrderActions.remove(order.id));
     }
   }
 
   Future<void> _startPayment(OrderRecord order) async {
-    if (_startingPayments.contains(order.id)) return;
-    setState(() => _startingPayments.add(order.id));
+    if (_activeOrderActions.contains(order.id)) return;
+    setState(() {
+      _activeOrderActions.add(order.id);
+      _startingPayments.add(order.id);
+    });
     try {
       final intent = await ApiClient.createPaymentIntent(
         orderId: order.id,
         idempotencyKey: '${order.id}-mobile-attempt-1',
       );
-      await _loadOrders();
       if (!mounted) return;
+      setState(() {
+        orders = orders
+            .map((current) => current.id == order.id
+                ? current.copyWith(paymentStatus: intent.status)
+                : current)
+            .toList();
+      });
+      final refreshed = await _refreshOrdersAfterMutation();
       final message = intent.checkoutUrl == null
           ? localized(
               context,
@@ -2274,24 +2338,36 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 })
           : localized(context,
               'Payment intent created. Continue through the provider checkout.');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+      _showOrderActionMessage(refreshed
+          ? message
+          : localized(
+              context,
+              'Payment intent was created, but the latest order list could not be refreshed.',
+            ));
     } catch (exception) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(localized(
-                  context,
-                  'Payment could not be started: {error}',
-                  {'error': exception}))),
+        if (exception is DioException && exception.response?.statusCode == 409) {
+          await _refreshOrdersAfterMutation();
+        }
+        if (!mounted) return;
+        _logOrderActionFailure(exception);
+        _showOrderActionMessage(
+          localizedError(context, exception),
         );
       }
     } finally {
-      if (mounted) setState(() => _startingPayments.remove(order.id));
+      if (mounted) {
+        setState(() {
+          _startingPayments.remove(order.id);
+          _activeOrderActions.remove(order.id);
+        });
+      }
     }
   }
 
   Future<void> _showDelivery(OrderRecord order) async {
+    if (_activeOrderActions.contains(order.id)) return;
+    setState(() => _activeOrderActions.add(order.id));
     try {
       final delivery = await ApiClient.fetchDelivery(order.id);
       if (!mounted) return;
@@ -2329,105 +2405,179 @@ class _OrdersScreenState extends State<OrdersScreen> {
       );
     } catch (exception) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(localized(
-                  context,
-                  'Delivery information is unavailable: {error}',
-                  {'error': exception}))),
+        _logOrderActionFailure(exception);
+        _showOrderActionMessage(
+          localized(context, 'Delivery information could not be loaded: {error}',
+              {'error': localizedError(context, exception)}),
         );
       }
+    } finally {
+      if (mounted) setState(() => _activeOrderActions.remove(order.id));
     }
   }
 
   Future<void> _reviewOrder(OrderRecord order) async {
     if (order.items.isEmpty) return;
+    if (_activeOrderActions.contains(order.id)) return;
+    setState(() => _activeOrderActions.add(order.id));
     final commentController = TextEditingController();
     var productId = order.items.first.productId;
     var rating = 5;
+    var submitting = false;
+    String? submissionError;
     try {
-      final review = await showDialog<Map<String, Object>>(
+      final review = await showDialog<bool>(
         context: context,
+        barrierDismissible: false,
         builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: Text(localized(context, 'Review a delivered product')),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: productId,
-                  items: order.items
-                      .map((item) => DropdownMenuItem(
-                            value: item.productId,
-                            child: Text(item.name,
-                                overflow: TextOverflow.ellipsis),
-                          ))
-                      .toList(),
-                  onChanged: (value) =>
-                      setDialogState(() => productId = value ?? productId),
+          builder: (context, setDialogState) => PopScope(
+            canPop: !submitting,
+            child: AlertDialog(
+              scrollable: true,
+              title: Text(localized(context, 'Review a delivered product')),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: productId,
+                    items: order.items
+                        .map((item) => DropdownMenuItem(
+                              value: item.productId,
+                              child: Text(item.name,
+                                  overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: submitting
+                        ? null
+                        : (value) => setDialogState(
+                            () => productId = value ?? productId),
+                  ),
+                  Text(localized(
+                      context, 'Rating: {rating} / 5', {'rating': rating})),
+                  Slider(
+                    value: rating.toDouble(),
+                    min: 1,
+                    max: 5,
+                    divisions: 4,
+                    label: '$rating',
+                    onChanged: submitting
+                        ? null
+                        : (value) =>
+                            setDialogState(() => rating = value.round()),
+                  ),
+                  TextField(
+                    controller: commentController,
+                    maxLength: 1000,
+                    enabled: !submitting,
+                    decoration: InputDecoration(
+                        labelText: localized(context, 'Comment (optional)')),
+                  ),
+                  if (submissionError != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        submissionError!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting
+                      ? null
+                      : () => Navigator.pop(dialogContext),
+                  child: Text(localized(context, 'Cancel')),
                 ),
-                Text(localized(
-                    context, 'Rating: {rating} / 5', {'rating': rating})),
-                Slider(
-                  value: rating.toDouble(),
-                  min: 1,
-                  max: 5,
-                  divisions: 4,
-                  label: '$rating',
-                  onChanged: (value) =>
-                      setDialogState(() => rating = value.round()),
-                ),
-                TextField(
-                  controller: commentController,
-                  maxLength: 1000,
-                  decoration: InputDecoration(
-                      labelText: localized(context, 'Comment (optional)')),
+                FilledButton(
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            submitting = true;
+                            submissionError = null;
+                          });
+                          final comment = commentController.text.trim();
+                          try {
+                            await ApiClient.submitProductReview(
+                              productId: productId,
+                              orderId: order.id,
+                              rating: rating,
+                              comment: comment,
+                            );
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext, true);
+                            }
+                          } catch (exception) {
+                            if (dialogContext.mounted) {
+                              _logOrderActionFailure(exception);
+                              setDialogState(() {
+                                submitting = false;
+                                submissionError =
+                                    localizedError(context, exception);
+                              });
+                            }
+                          }
+                        },
+                  child: submitting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(localized(context, 'Submit')),
                 ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(localized(context, 'Cancel')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, {
-                  'productId': productId,
-                  'rating': rating,
-                  'comment': commentController.text,
-                }),
-                child: Text(localized(context, 'Submit')),
-              ),
-            ],
           ),
         ),
       );
-      if (review == null) return;
-      await ApiClient.submitProductReview(
-        productId: review['productId']! as String,
-        orderId: order.id,
-        rating: review['rating']! as int,
-        comment: review['comment']! as String,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text(localized(context, 'Review submitted for moderation.'))),
+      if (review == true && mounted) {
+        _showOrderActionMessage(
+          localized(context, 'Review submitted for moderation.'),
         );
       }
     } catch (exception) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(localized(
-                  context,
-                  'Review could not be submitted: {error}',
-                  {'error': exception}))),
+        _logOrderActionFailure(exception);
+        _showOrderActionMessage(
+          localizedError(context, exception),
         );
       }
     } finally {
       commentController.dispose();
+      if (mounted) setState(() => _activeOrderActions.remove(order.id));
+    }
+  }
+
+  Future<bool> _refreshOrdersAfterMutation() async {
+    try {
+      final result = await ApiClient.fetchOrders();
+      if (!mounted) return false;
+      setState(() => orders = result);
+      return true;
+    } catch (exception) {
+      _logOrderActionFailure(exception);
+      return false;
+    }
+  }
+
+  void _showOrderActionMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _logOrderActionFailure(Object error) {
+    if (error is DioException) {
+      debugPrint(
+        'Customer order action failed: ${error.type.name}, '
+        'HTTP ${error.response?.statusCode ?? 'no response'}',
+      );
+    } else {
+      debugPrint('Customer order action failed: ${error.runtimeType}');
     }
   }
 
@@ -2480,17 +2630,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                  Text(localized(context, 'Order {id}',
+                                      {'id': order.id.substring(0, 8)})),
+                                  const SizedBox(height: 4),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
                                     children: [
-                                      Text(localized(context, 'Order {id}',
-                                          {'id': order.id.substring(0, 8)})),
                                       Chip(
-                                          label: Text(localizedStatus(
-                                              context,
-                                              customerOrderDisplayStatus(
-                                                  order)))),
+                                        label: Text(localized(
+                                          context,
+                                          'Order status: {status}',
+                                          {
+                                            'status': localizedStatus(
+                                                context, order.status)
+                                          },
+                                        )),
+                                      ),
+                                      if (order.deliveryStatus != null)
+                                        Chip(
+                                          label: Text(localized(
+                                            context,
+                                            'Delivery status: {status}',
+                                            {
+                                              'status': localizedStatus(
+                                                  context,
+                                                  order.deliveryStatus!)
+                                            },
+                                          )),
+                                        ),
                                     ],
                                   ),
                                   Text(
@@ -2520,21 +2688,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     spacing: 8,
                                     children: [
                                       OutlinedButton.icon(
-                                        onPressed: () => _reorder(order),
+                                        onPressed:
+                                            _activeOrderActions.contains(order.id)
+                                                ? null
+                                                : () => _reorder(order),
                                         icon: const Icon(Icons.replay),
                                         label:
                                             Text(localized(context, 'Reorder')),
                                       ),
-                                      OutlinedButton.icon(
-                                        onPressed: () => _showDelivery(order),
-                                        icon: const Icon(
-                                            Icons.local_shipping_outlined),
-                                        label: Text(
-                                            localized(context, 'Delivery')),
-                                      ),
+                                      if (order.deliveryStatus != null)
+                                        OutlinedButton.icon(
+                                          onPressed: _activeOrderActions
+                                                  .contains(order.id)
+                                              ? null
+                                              : () => _showDelivery(order),
+                                          icon: const Icon(
+                                              Icons.local_shipping_outlined),
+                                          label: Text(
+                                              localized(context, 'Delivery')),
+                                        ),
                                       if (order.deliveryStatus == 'delivered')
                                         OutlinedButton.icon(
-                                          onPressed: () => _reviewOrder(order),
+                                          onPressed: _activeOrderActions
+                                                  .contains(order.id)
+                                              ? null
+                                              : () => _reviewOrder(order),
                                           icon: const Icon(Icons.star_outline),
                                           label: Text(localized(
                                               context, 'Review product')),
@@ -2542,7 +2720,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                       if (canCancel &&
                                           order.paymentStatus != 'pending')
                                         TextButton.icon(
-                                          onPressed: () => _cancelOrder(order),
+                                          onPressed: _activeOrderActions
+                                                  .contains(order.id)
+                                              ? null
+                                              : () => _cancelOrder(order),
                                           icon:
                                               const Icon(Icons.cancel_outlined),
                                           label: Text(
@@ -2557,7 +2738,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                         else
                                           FilledButton.tonal(
                                             onPressed: _startingPayments
-                                                    .contains(order.id)
+                                                        .contains(order.id) ||
+                                                    _activeOrderActions
+                                                        .contains(order.id)
                                                 ? null
                                                 : () => _startPayment(order),
                                             child: Text(_startingPayments

@@ -347,20 +347,41 @@ const _translations = <String, String>{
   'Place order': 'تأكيد الطلب',
   '{minutes} minutes': '{minutes} دقيقة',
   'Apt {apartment}': 'شقة {apartment}',
-  'Payment could not be started: {error}': 'تعذر بدء الدفع: {error}',
   'Tracking code: {code}': 'رمز التتبع: {code}',
   'Estimated time: {minutes} minutes': 'الوقت المتوقع: {minutes} دقيقة',
   'Live driver tracking is not available yet.':
       'تتبع السائق المباشر غير متاح حالياً.',
-  'Delivery information is unavailable: {error}':
-      'معلومات التوصيل غير متاحة: {error}',
+  'Delivery information could not be loaded: {error}':
+      'تعذر تحميل معلومات التوصيل: {error}',
   'Review a delivered product': 'تقييم منتج تم توصيله',
   'Rating: {rating} / 5': 'التقييم: {rating} / 5',
   'Comment (optional)': 'تعليق (اختياري)',
   'Cancel': 'إلغاء',
   'Submit': 'إرسال',
   'Review submitted for moderation.': 'تم إرسال التقييم للمراجعة.',
-  'Review could not be submitted: {error}': 'تعذر إرسال التقييم: {error}',
+  'This product can only be reviewed after delivery.':
+      'لا يمكن تقييم هذا المنتج إلا بعد توصيله.',
+  'You have already reviewed this product for this order.':
+      'لقد قيّمت هذا المنتج ضمن هذا الطلب من قبل.',
+  'This order is no longer awaiting payment. Refresh your orders.':
+      'لم يعد هذا الطلب بانتظار الدفع. حدّث قائمة طلباتك.',
+  'This order can no longer be cancelled.': 'لم يعد بالإمكان إلغاء هذا الطلب.',
+  'Cancel the payment with your payment provider before cancelling this order.':
+      'ألغِ الدفع لدى مزود الدفع قبل إلغاء هذا الطلب.',
+  'This checkout is no longer available. Review checkout again.':
+      'لم تعد جلسة إتمام الطلب متاحة. راجع تفاصيل الطلب مجدداً.',
+  'Your cart or pricing changed. Review checkout again.':
+      'تغيرت سلتك أو الأسعار. راجع تفاصيل الطلب مجدداً.',
+  'This promotion is no longer available. Review checkout again.':
+      'لم يعد هذا العرض متاحاً. راجع تفاصيل الطلب مجدداً.',
+  'This request conflicts with the current order state. Refresh and try again.':
+      'تعارض الطلب مع حالة الطلب الحالية. حدّث القائمة ثم أعد المحاولة.',
+  'Order cancelled, but the latest order list could not be refreshed.':
+      'تم إلغاء الطلب، لكن تعذر تحديث قائمة الطلبات.',
+  'Payment intent was created, but the latest order list could not be refreshed.':
+      'تم إنشاء طلب الدفع، لكن تعذر تحديث قائمة الطلبات.',
+  'Order status: {status}': 'حالة الطلب: {status}',
+  'Delivery status: {status}': 'حالة التوصيل: {status}',
   'Order {id}': 'الطلب {id}',
   'Payment has not been processed.': 'لم تتم معالجة الدفع.',
   'Reorder': 'إعادة الطلب',
@@ -545,6 +566,9 @@ String localizedError(BuildContext context, Object error) {
             'Password recovery email is not configured') {
       return localized(context, 'Password recovery email is not configured');
     }
+    if (response.statusCode == 409) {
+      return _localizedConflict(context, response.data);
+    }
     if (response.statusCode != null && response.statusCode! >= 500) {
       return localized(
         context,
@@ -558,6 +582,36 @@ String localizedError(BuildContext context, Object error) {
         '',
       );
   return _knownError(context, message);
+}
+
+String _localizedConflict(BuildContext context, Object? payload) {
+  final message =
+      payload is Map<String, dynamic> ? payload['message'] : null;
+  const knownConflicts = {
+    'A review already exists for this product and order':
+        'You have already reviewed this product for this order.',
+    'Order is not awaiting payment':
+        'This order is no longer awaiting payment. Refresh your orders.',
+    'Order can no longer be cancelled':
+        'This order can no longer be cancelled.',
+    'Order can no longer be cancelled after delivery dispatch has started':
+        'Order can no longer be cancelled after delivery dispatch has started',
+    'Cancel the payment with the provider before cancelling this order':
+        'Cancel the payment with your payment provider before cancelling this order.',
+    'Checkout session is no longer available for ordering':
+        'This checkout is no longer available. Review checkout again.',
+    'Cart or pricing changed after checkout was prepared':
+        'Your cart or pricing changed. Review checkout again.',
+    'Promotion is no longer available; prepare checkout again':
+        'This promotion is no longer available. Review checkout again.',
+  };
+  if (message is String && knownConflicts.containsKey(message)) {
+    return localized(context, knownConflicts[message]!);
+  }
+  return localized(
+    context,
+    'This request conflicts with the current order state. Refresh and try again.',
+  );
 }
 
 String _localizedResponseError(BuildContext context, Object? payload) {
@@ -631,10 +685,21 @@ String _knownError(BuildContext context, String message) {
     'Could not delete the address.',
     'Unable to load cart',
     'Too many requests',
+    'You have already reviewed this product for this order.',
+    'This order is no longer awaiting payment. Refresh your orders.',
+    'This order can no longer be cancelled.',
+    'Cancel the payment with your payment provider before cancelling this order.',
+    'This checkout is no longer available. Review checkout again.',
+    'Your cart or pricing changed. Review checkout again.',
+    'This promotion is no longer available. Review checkout again.',
+    'This request conflicts with the current order state. Refresh and try again.',
   };
   if (known.contains(message)) return localized(context, message);
   if (message.contains('Product not found')) {
     return localized(context, 'A product could not be found.');
+  }
+  if (message == 'A delivered order containing this product is required') {
+    return localized(context, 'This product can only be reviewed after delivery.');
   }
   if (message.contains('not found') ||
       message.contains('no longer available')) {
